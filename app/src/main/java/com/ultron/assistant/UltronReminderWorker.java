@@ -33,6 +33,7 @@ public final class UltronReminderWorker extends Worker {
         String reminder = getInputData().getString(UltronTaskManager.KEY_REMINDER_TEXT);
 
         if (reminder == null || reminder.trim().isEmpty()) {
+            UltronTaskManager.clearReminder(context, getId());
             return Result.failure();
         }
 
@@ -41,6 +42,7 @@ public final class UltronReminderWorker extends Worker {
                 != PackageManager.PERMISSION_GRANTED) {
             // The user may revoke notification permission after scheduling.
             // Do not attempt to bypass Android's permission decision.
+            UltronTaskManager.clearReminder(context, getId());
             return Result.success();
         }
 
@@ -70,6 +72,7 @@ public final class UltronReminderWorker extends Worker {
                 .setPriority(Notification.PRIORITY_DEFAULT);
 
         manager.notify(getId().hashCode(), notification.build());
+        UltronTaskManager.clearReminder(context, getId());
         return Result.success();
     }
 
