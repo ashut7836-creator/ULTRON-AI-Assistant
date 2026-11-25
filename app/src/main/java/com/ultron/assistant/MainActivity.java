@@ -680,8 +680,18 @@ public class MainActivity extends Activity {
         try {
             com.google.firebase.FirebaseApp app =
                     com.google.firebase.FirebaseApp.getInstance();
+            int base64Flags = android.util.Base64.URL_SAFE
+                    | android.util.Base64.NO_PADDING
+                    | android.util.Base64.NO_WRAP;
             String persistenceKey =
-                    app.getName() + "+" + app.getOptions().getApplicationId();
+                    android.util.Base64.encodeToString(
+                            app.getName().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                            base64Flags)
+                    + "+"
+                    + android.util.Base64.encodeToString(
+                            app.getOptions().getApplicationId().getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8),
+                            base64Flags);
             String preferencesName =
                     "com.google.firebase.appcheck.debug.store." + persistenceKey;
             String secretKey =
