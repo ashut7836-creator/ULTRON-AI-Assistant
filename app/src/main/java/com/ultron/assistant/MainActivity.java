@@ -61,6 +61,7 @@ public class MainActivity extends Activity {
     private TextView wakeEngineButton;
     private boolean waitingForOverlaySettings;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private SpeechOutput speechOutput;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,6 +74,7 @@ public class MainActivity extends Activity {
         window.getDecorView().setSystemUiVisibility(0);
 
         buildInterface();
+        speechOutput = new SpeechOutput(this);
 
         if (ACTION_FROM_WAKE.equals(getIntent().getAction())) {
             uiHandler.postDelayed(this::startVoiceInput, 700);
@@ -552,6 +554,7 @@ public class MainActivity extends Activity {
 
         if (normalized.isEmpty()) {
             resultText.setText("Enter a command or tap the voice control.");
+            speakResponse("Please enter a command or use the voice control.");
             return;
         }
 
@@ -567,7 +570,8 @@ public class MainActivity extends Activity {
 
         connectionText.setText("COMMAND RECEIVED  /  READY");
         resultText.setText("Command received: \"" + command + "\"\n\n" +
-                "The AI connection and advanced phone controls are being added next.");
+                "The AI brain is not connected yet. It will be added in the next development stage.");
+        speakResponse("I received your command. My AI brain is not connected yet.");
     }
 
     private void openApp(String packageName, String appName) {
@@ -575,6 +579,7 @@ public class MainActivity extends Activity {
 
         if (launchIntent == null) {
             resultText.setText(appName + " is not installed or cannot be opened.");
+            speakResponse(appName + " is not installed on this device.");
             return;
         }
 
@@ -582,9 +587,25 @@ public class MainActivity extends Activity {
             startActivity(launchIntent);
             connectionText.setText("COMMAND EXECUTED  /  " + appName.toUpperCase(Locale.ROOT));
             resultText.setText("Opening " + appName + " on this device.");
+            speakResponse("Opening " + appName + ".");
         } catch (Exception e) {
             resultText.setText("Could not open " + appName + ".");
+            speakResponse("I could not open " + appName + ".");
         }
+    }
+
+    private void speakResponse(String message) {
+        if (speechOutput != null) {
+            speechOutput.speak(message);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (speechOutput != null) {
+            speechOutput.shutdown();
+        }
+        super.onDestroy();
     }
 
     private GradientDrawable panelBackground(int color, int stroke, int radius) {
