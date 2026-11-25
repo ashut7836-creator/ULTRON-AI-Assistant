@@ -165,12 +165,12 @@ public class MainActivity extends Activity {
         LinearLayout quickRow = new LinearLayout(this);
         quickRow.setOrientation(LinearLayout.HORIZONTAL);
 
-        TextView youtubeButton = appButton("▶", "YOUTUBE");
+        View youtubeButton = appButton("▶", "YOUTUBE");
         quickRow.addView(youtubeButton, weightParams(1, 0, dp(5)));
         youtubeButton.setOnClickListener(v ->
                 openApp("com.google.android.youtube", "YouTube"));
 
-        TextView whatsappButton = appButton("◉", "WHATSAPP");
+        View whatsappButton = appButton("◉", "WHATSAPP");
         quickRow.addView(whatsappButton, weightParams(1, dp(5), 0));
         whatsappButton.setOnClickListener(v ->
                 openApp("com.whatsapp", "WhatsApp"));
