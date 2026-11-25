@@ -991,6 +991,14 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (isAmbiguousContactReference(cleanName)) {
+            finishContactDraft(
+                    callback,
+                    false,
+                    "Who should I message? Please say the person's saved contact name instead of a pronoun.");
+            return;
+        }
+
         if (checkSelfPermission(Manifest.permission.READ_CONTACTS)
                 != PackageManager.PERMISSION_GRANTED) {
             pendingContactName = cleanName;
@@ -1003,6 +1011,15 @@ public class MainActivity extends Activity {
         }
 
         resolveContactWhatsAppDraft(cleanName, cleanMessage, callback);
+    }
+
+    private boolean isAmbiguousContactReference(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return "him".equals(normalized) || "her".equals(normalized)
+                || "them".equals(normalized) || "he".equals(normalized)
+                || "she".equals(normalized) || "they".equals(normalized)
+                || "that person".equals(normalized) || "that friend".equals(normalized)
+                || "my friend".equals(normalized) || "my contact".equals(normalized);
     }
 
     private void resolveContactWhatsAppDraft(
