@@ -680,11 +680,21 @@ public class MainActivity extends Activity {
             }
 
             if ("draft_whatsapp_message".equals(toolName)) {
+                String draftText = arguments == null ? null : arguments.get("message");
+                if (draftText == null || draftText.trim().isEmpty()
+                        || draftText.length() > 1000) {
+                    callback.onResult(false, "The WhatsApp draft was invalid. Nothing was opened or sent.");
+                    return;
+                }
+
                 new AlertDialog.Builder(this)
-                        .setTitle("Open WhatsApp draft?")
+                        .setTitle("Review WhatsApp draft")
                         .setMessage(
-                                "ULTRON will open WhatsApp with a draft. It will not send anything. " +
-                                "You choose the recipient, review the message, and tap Send yourself.")
+                                "ULTRON wants to open this draft:\n\n"
+                                + draftText.trim()
+                                + "\n\nNothing will be sent automatically. "
+                                + "After WhatsApp opens, choose the recipient, review the text, "
+                                + "and tap Send yourself.")
                         .setNegativeButton("Cancel", (dialog, which) ->
                                 callback.onResult(false, "Cancelled. No message was sent."))
                         .setPositiveButton("Open draft", (dialog, which) ->
