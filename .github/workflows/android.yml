@@ -33,6 +33,14 @@ jobs:
       - name: Install Android build packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Restore Firebase configuration
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$FIREBASE_GOOGLE_SERVICES_JSON"
+          printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
+          python -c "import json; json.load(open('app/google-services.json', encoding='utf-8'))"
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
