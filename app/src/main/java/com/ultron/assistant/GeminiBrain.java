@@ -73,6 +73,14 @@ public final class GeminiBrain {
             "^(?:please\\s+)?(?:draft|write|compose|prepare|send|message|text)\\b.*\\bwhats?app\\b.*\\bmessage\\b.*$",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
+    private static final Pattern WHATSAPP_CONTACT_REQUEST = Pattern.compile(
+            "^(?:please\\s+)?(?:message|text)\\s+(?:to\\s+)?(.+?)\\s+(?:on|via|in)\\s+whatsapp\\s+(?:saying|that says|:|,)\\s*(.+)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern WHATSAPP_CONTACT_REQUEST_ALT = Pattern.compile(
+            "^(?:please\\s+)?(?:send|draft|write|compose|prepare)\\s+(?:a\\s+)?whatsapp\\s+message\\s+to\\s+(.+?)\\s+(?:saying|that says|:|,)\\s*(.+)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
     private final GenerativeModelFutures model;
     private final UltronMemory memory;
     private final ToolHandler toolHandler;
@@ -148,9 +156,11 @@ public final class GeminiBrain {
         Map<String, Schema> draftParameters = new LinkedHashMap<>();
         draftParameters.put("message", Schema.str(
                 "The exact WhatsApp draft text requested by the user, up to 1000 characters."));
+        draftParameters.put("contact_name", Schema.str(
+                "Optional exact contact display name explicitly named by the user. Never provide or request a phone number."));
         declarations.add(new FunctionDeclaration(
                 "draft_whatsapp_message",
-                "Open WhatsApp with a message draft. Never send the message.",
+                "Open a WhatsApp message draft, optionally for an explicitly named contact. Never send the message.",
                 draftParameters,
                 Collections.<String>emptyList()));
 
@@ -378,10 +388,32 @@ public final class GeminiBrain {
         }
 
         if ("draft_whatsapp_message".equals(toolName)) {
+            String contactName = arguments.get("contact_name");
+            if (contactName != null && !contactName.trim().isEmpty()) {
+                java.util.regex.Matcher matcher =
+                        WHATSAPP_CONTACT_REQUEST.matcher(message);
+                if (!matcher.matches()) {
+                    matcher = WHATSAPP_CONTACT_REQUEST_ALT.matcher(message);
+                }
+                return matcher.matches()
+                        && normalizeDraftText(matcher.group(1))
+                        .equals(normalizeDraftText(contactName))
+                        && normalizeDraftText(matcher.group(2))
+                        .equals(normalizeDraftText(arguments.get("message")));
+            }
             return WHATSAPP_DRAFT_REQUEST.matcher(message).matches();
         }
 
         return false;
+    }
+
+    private static String normalizeDraftText(String value) {
+        if (value == null) return "";
+        return value.trim()
+                .replaceAll("[.!?]+$", "")
+                .trim()
+                .replaceAll("\\s+", " ")
+                .toLowerCase(Locale.ROOT);
     }
 
     private static String normalizeSearchText(String value) {
