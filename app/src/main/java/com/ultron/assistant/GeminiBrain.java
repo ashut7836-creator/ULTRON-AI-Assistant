@@ -36,6 +36,7 @@ public final class GeminiBrain {
             "action feature is not connected yet.";
 
     private final GenerativeModelFutures model;
+    private final UltronMemory memory;
     private final Deque<String> history = new ArrayDeque<>();
 
     public interface Callback {
@@ -43,15 +44,21 @@ public final class GeminiBrain {
         void onError(String message, Throwable cause);
     }
 
-    private GeminiBrain(GenerativeModelFutures model) {
+    private GeminiBrain(GenerativeModelFutures model, UltronMemory memory) {
         this.model = model;
+        this.memory = memory;
     }
 
     public static GeminiBrain create() {
+        return create(null);
+    }
+
+    public static GeminiBrain create(UltronMemory memory) {
         GenerativeModel generativeModel =
                 FirebaseAI.getInstance(GenerativeBackend.googleAI())
                         .generativeModel(MODEL_NAME);
-        return new GeminiBrain(GenerativeModelFutures.from(generativeModel));
+        return new GeminiBrain(
+                GenerativeModelFutures.from(generativeModel), memory);
     }
 
     public void ask(String userMessage, Callback callback) {
@@ -105,6 +112,17 @@ public final class GeminiBrain {
 
     private synchronized String buildPrompt(String userMessage) {
         StringBuilder prompt = new StringBuilder(SYSTEM_INSTRUCTIONS);
+
+        if (memory != null) {
+            try {
+                String savedContext = memory.getRelevantContext(userMessage);
+                if (savedContext != null && !savedContext.trim().isEmpty()) {
+                    prompt.append("\n\n").append(savedContext);
+                }
+            } catch (RuntimeException ignored) {
+                // Memory is optional; a storage issue must not block Gemini chat.
+            }
+        }
 
         if (!history.isEmpty()) {
             prompt.append("\n\nRecent conversation:\n");
