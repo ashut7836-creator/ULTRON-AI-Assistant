@@ -1,6 +1,7 @@
 package com.ultron.assistant;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 
 import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
@@ -23,6 +24,18 @@ public final class UltronTaskManager {
     public static final String TAG_REMINDERS = "ultron_user_reminder";
     public static final String KEY_REMINDER_TEXT = "reminder_text";
     public static final String KEY_DUE_AT = "due_at_epoch_ms";
+
+    private static final String PREFS_NAME = "ultron_background_tasks";
+
+    public static final class ReminderDetails {
+        public final String text;
+        public final long dueAt;
+
+        ReminderDetails(String text, long dueAt) {
+            this.text = text;
+            this.dueAt = dueAt;
+        }
+    }
 
     private UltronTaskManager() {}
 
@@ -53,10 +66,20 @@ public final class UltronTaskManager {
                 .addTag(TAG_REMINDERS)
                 .build();
 
-        WorkManager.getInstance(context.getApplicationContext()).enqueueUniqueWork(
-                "ultron-reminder-" + request.getId(),
+        Context appContext = context.getApplicationContext();
+        String uniqueName = "ultron-reminder-" + request.getId();
+
+        WorkManager.getInstance(appContext).enqueueUniqueWork(
+                uniqueName,
                 ExistingWorkPolicy.KEEP,
                 request);
+
+        // WorkInfo exposes status, not its original input Data. Keep only the
+        // reminder label and due time locally, keyed by WorkManager's UUID.
+        getPreferences(appContext).edit()
+                .putString(textKey(request.getId()), cleanText)
+                .putLong(timeKey(request.getId()), dueAt)
+                .apply();
 
         return request.getId();
     }
@@ -68,8 +91,38 @@ public final class UltronTaskManager {
                 .get(20, TimeUnit.SECONDS);
     }
 
+    public static ReminderDetails getReminderDetails(Context context, UUID id) {
+        if (context == null || id == null) return null;
+        SharedPreferences preferences = getPreferences(context.getApplicationContext());
+        String text = preferences.getString(textKey(id), null);
+        long dueAt = preferences.getLong(timeKey(id), 0L);
+        if (text == null || dueAt <= 0L) return null;
+        return new ReminderDetails(text, dueAt);
+    }
+
+    public static void clearReminder(Context context, UUID id) {
+        if (context == null || id == null) return;
+        getPreferences(context.getApplicationContext()).edit()
+                .remove(textKey(id))
+                .remove(timeKey(id))
+                .apply();
+    }
+
     public static void cancelReminder(Context context, UUID id) {
         if (context == null || id == null) return;
         WorkManager.getInstance(context.getApplicationContext()).cancelWorkById(id);
+        clearReminder(context, id);
+    }
+
+    private static SharedPreferences getPreferences(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    private static String textKey(UUID id) {
+        return "reminder." + id + ".text";
+    }
+
+    private static String timeKey(UUID id) {
+        return "reminder." + id + ".due_at";
     }
 }
