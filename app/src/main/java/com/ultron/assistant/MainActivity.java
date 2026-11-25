@@ -372,19 +372,6 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_WAKE_OVERLAY) {
-            waitingForOverlaySettings = false;
-            if (Settings.canDrawOverlays(this)) {
-                requestWakePrerequisites();
-            } else {
-                connectionText.setText("OVERLAY PERMISSION NOT GRANTED");
-            }
-        }
-    }
-
-    @Override
     public void onRequestPermissionsResult(int requestCode,
                                            String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -534,6 +521,16 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_WAKE_OVERLAY) {
+            waitingForOverlaySettings = false;
+            if (Settings.canDrawOverlays(this)) {
+                requestWakePrerequisites();
+            } else {
+                connectionText.setText("OVERLAY PERMISSION NOT GRANTED");
+            }
+            return;
+        }
 
         if (requestCode == SPEECH_REQUEST) {
             if (resultCode == RESULT_OK && data != null) {
