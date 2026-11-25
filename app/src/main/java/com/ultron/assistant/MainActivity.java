@@ -1,7 +1,10 @@
 package com.ultron.assistant;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -11,7 +14,11 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.speech.RecognizerIntent;
 import android.view.Gravity;
 import android.view.View;
@@ -31,6 +38,12 @@ import java.util.Locale;
 public class MainActivity extends Activity {
 
     private static final int SPEECH_REQUEST = 1001;
+    private static final int REQUEST_WAKE_MIC = 2201;
+    private static final int REQUEST_WAKE_NOTIFICATIONS = 2202;
+    private static final int REQUEST_WAKE_OVERLAY = 2203;
+
+    public static final String ACTION_FROM_WAKE =
+            "com.ultron.assistant.action.FROM_WAKE";
 
     private static final int BG = Color.rgb(4, 9, 18);
     private static final int PANEL = Color.rgb(9, 21, 35);
@@ -45,6 +58,9 @@ public class MainActivity extends Activity {
     private TextView resultText;
     private TextView connectionText;
     private CoreView coreView;
+    private TextView wakeEngineButton;
+    private boolean waitingForOverlaySettings;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +73,40 @@ public class MainActivity extends Activity {
         window.getDecorView().setSystemUiVisibility(0);
 
         buildInterface();
+
+        if (ACTION_FROM_WAKE.equals(getIntent().getAction())) {
+            uiHandler.postDelayed(this::startVoiceInput, 700);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshWakeButton();
+
+        if (waitingForOverlaySettings) {
+            waitingForOverlaySettings = false;
+            if (Settings.canDrawOverlays(this)) {
+                requestWakePrerequisites();
+            } else if (connectionText != null) {
+                connectionText.setText("OVERLAY PERMISSION NOT GRANTED");
+            }
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (ACTION_FROM_WAKE.equals(intent.getAction())) {
+            if (connectionText != null) {
+                connectionText.setText("WAKE PHRASE DETECTED");
+            }
+            if (resultText != null) {
+                resultText.setText("ULTRON heard you. Speak your command.");
+            }
+            uiHandler.postDelayed(this::startVoiceInput, 700);
+        }
     }
 
     private void buildInterface() {
@@ -108,7 +158,23 @@ public class MainActivity extends Activity {
         metrics.addView(metricTile("AI LINK", "PENDING"), weightParams(1, dp(6), 0));
         root.addView(metrics, matchWrap());
 
-        addSpace(root, 24);
+        addSpace(root, 19);
+
+        wakeEngineButton = hudButton(
+                "ENABLE WAKE PHRASE", PANEL_LIGHT, CYAN, CYAN_DIM, true);
+        root.addView(wakeEngineButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+        wakeEngineButton.setOnClickListener(v -> toggleWakeEngine());
+
+        addSpace(root, 8);
+
+        TextView wakeHint = text(
+                "Optional local listening. First use downloads an offline English model (~40 MB).",
+                10, MUTED, false);
+        wakeHint.setGravity(Gravity.CENTER);
+        root.addView(wakeHint, matchWrap());
+
+        addSpace(root, 22);
 
         TextView commandLabel = text("COMMAND CONSOLE", 11, CYAN, true);
         commandLabel.setLetterSpacing(0.18f);
@@ -207,6 +273,141 @@ public class MainActivity extends Activity {
         root.addView(footer, matchWrap());
 
         setContentView(scrollView);
+        refreshWakeButton();
+    }
+
+    private void toggleWakeEngine() {
+        boolean enabled = getSharedPreferences("ultron_state", MODE_PRIVATE)
+                .getBoolean("wake_enabled", false);
+
+        if (enabled) {
+            Intent stop = new Intent(this, WakeWordService.class);
+            stop.setAction(WakeWordService.ACTION_STOP);
+            try {
+                startService(stop);
+            } catch (Exception e) {
+                stopService(new Intent(this, WakeWordService.class));
+            }
+            connectionText.setText("WAKE ENGINE STOPPING");
+            resultText.setText("ULTRON wake phrase listening is being turned off.");
+            refreshWakeButton();
+            return;
+        }
+
+        if (!Settings.canDrawOverlays(this)) {
+            waitingForOverlaySettings = true;
+            connectionText.setText("OVERLAY PERMISSION REQUIRED");
+            Intent settingsIntent = new Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            try {
+                startActivityForResult(settingsIntent, REQUEST_WAKE_OVERLAY);
+            } catch (Exception e) {
+                waitingForOverlaySettings = false;
+                resultText.setText("Open Android Settings and allow ULTRON to display over other apps.");
+            }
+            return;
+        }
+
+        requestWakePrerequisites();
+    }
+
+    private void requestWakePrerequisites() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{Manifest.permission.RECORD_AUDIO},
+                    REQUEST_WAKE_MIC);
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQUEST_WAKE_NOTIFICATIONS);
+            return;
+        }
+
+        startWakeEngine();
+    }
+
+    private void startWakeEngine() {
+        Intent start = new Intent(this, WakeWordService.class);
+        start.setAction(WakeWordService.ACTION_START);
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(start);
+            } else {
+                startService(start);
+            }
+
+            getSharedPreferences("ultron_state", MODE_PRIVATE)
+                    .edit().putBoolean("wake_enabled", true).apply();
+
+            connectionText.setText("WAKE ENGINE STARTING");
+            resultText.setText(
+                    "ULTRON is preparing its offline wake-word model. " +
+                    "A persistent notification will show while listening is active.");
+            refreshWakeButton();
+        } catch (Exception e) {
+            connectionText.setText("WAKE ENGINE COULD NOT START");
+            resultText.setText(
+                    "Android could not start microphone listening. " +
+                    "Open ULTRON and try again while it is on screen.");
+        }
+    }
+
+    private void refreshWakeButton() {
+        if (wakeEngineButton == null) return;
+
+        boolean enabled = getSharedPreferences("ultron_state", MODE_PRIVATE)
+                .getBoolean("wake_enabled", false);
+        wakeEngineButton.setText(
+                enabled ? "STOP WAKE PHRASE" : "ENABLE WAKE PHRASE");
+        wakeEngineButton.setTextColor(enabled ? GOLD : CYAN);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_WAKE_OVERLAY) {
+            waitingForOverlaySettings = false;
+            if (Settings.canDrawOverlays(this)) {
+                requestWakePrerequisites();
+            } else {
+                connectionText.setText("OVERLAY PERMISSION NOT GRANTED");
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == REQUEST_WAKE_MIC
+                || requestCode == REQUEST_WAKE_NOTIFICATIONS) {
+            boolean micGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                    || checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED;
+            boolean notificationsGranted = Build.VERSION.SDK_INT < 33
+                    || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED;
+
+            if (!micGranted) {
+                connectionText.setText("MICROPHONE PERMISSION NOT GRANTED");
+                resultText.setText("ULTRON needs microphone permission to detect its wake phrase.");
+            } else if (!notificationsGranted) {
+                connectionText.setText("NOTIFICATION PERMISSION REQUIRED");
+                resultText.setText("Allow notifications so Android can clearly show when wake listening is active.");
+            } else {
+                startWakeEngine();
+            }
+        }
     }
 
     private View buildHeader() {
