@@ -123,7 +123,7 @@ public final class DeviceCommandRouter {
 
     private static String stripWakePhrase(String command) {
         return command.replaceFirst(
-                "(?i)^[\\s,.:;!?]*(?:(?:hey|okay|ok)\\s+)?ultron\\\\b[,!:.]?\\s*",
+                "(?i)^[\\s,.:;!?]*(?:(?:hey|okay|ok)\\s+)?ultron\\b[,!:.]?\\s*",
                 "").trim();
     }
 
