@@ -300,7 +300,7 @@ public final class UltronMemory extends SQLiteOpenHelper {
         if (raw == null) return "";
         return raw.trim().replaceFirst(
                 "(?i)^[\\s,.:;!?]*(?:(?:hey|okay|ok)\\s+)?ultron\\b[,!:.]?\\s*",
-                "").trim();
+                "").trim().replaceAll("[\\s,.;:!?]+$", "").trim();
     }
 
     private static String clean(String text) {
