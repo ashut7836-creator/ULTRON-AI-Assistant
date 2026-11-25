@@ -17,13 +17,17 @@ import java.util.regex.Pattern;
  */
 public final class DeviceCommandRouter {
 
-    private static final Pattern OPEN_AND_SEARCH = Pattern.compile(
-            "^(?:please\\s+)?(?:open|launch|start)\\s+(youtube|instagram)\\s+(?:and\\s+)?(?:search(?:\\s+for)?|find)\\s+(.+)$",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern APP_FIRST_SEARCH = Pattern.compile(
+            ".*\\b(youtube|instagram)\\b.*\\b(?:search|find|look\\s+up)\\b\\s+(?:for\\s+)?(.+)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern SEARCH_APP_FOR = Pattern.compile(
+            ".*\\b(?:search|find|look\\s+up)\\s+(youtube|instagram)\\s+(?:for\\s+)?(.+)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern SEARCH_ON_APP = Pattern.compile(
-            "^(?:please\\s+)?(?:search|find)\\s+(.+?)\\s+(?:on|in)\\s+(youtube|instagram)$",
-            Pattern.CASE_INSENSITIVE);
+            ".*\\b(?:search|find|look\\s+up)\\b\\s+(?:for\\s+)?(.+?)\\s+\\b(?:on|in)\\s+(youtube|instagram)\\b.*",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern OPEN_APP = Pattern.compile(
             "^(?:please\\s+)?(?:open|launch|start)\\s+(youtube|instagram|whatsapp)$",
@@ -54,29 +58,20 @@ public final class DeviceCommandRouter {
     public static String handle(Activity activity, String rawCommand) {
         if (activity == null || rawCommand == null) return null;
 
-        String command = rawCommand.trim();
+        String command = stripWakePhrase(rawCommand.trim());
         if (command.isEmpty()) return null;
 
-        Matcher matcher = OPEN_AND_SEARCH.matcher(command);
-        if (matcher.matches()) {
-            String app = matcher.group(1).toLowerCase(Locale.ROOT);
-            String query = matcher.group(2).trim();
-            String url = buildSearchUrl(app, query);
-            if (openUrl(activity, url)) {
-                return "Opening " + displayName(app) + " and searching for " + query + ".";
+        SearchRequest searchRequest = extractSearchRequest(command);
+        if (searchRequest != null) {
+            String query = searchRequest.query;
+            if (openSearch(activity, searchRequest.app, query)) {
+                return "Opening " + displayName(searchRequest.app)
+                        + " search for " + query + ".";
             }
             return "I couldn't open that search. Check whether the app or a browser is installed.";
         }
 
-        matcher = SEARCH_ON_APP.matcher(command);
-        if (matcher.matches()) {
-            String query = matcher.group(1).trim();
-            String app = matcher.group(2).toLowerCase(Locale.ROOT);
-            if (openUrl(activity, buildSearchUrl(app, query))) {
-                return "Searching for " + query + " on " + displayName(app) + ".";
-            }
-            return "I couldn't open that search. Check whether the app or a browser is installed.";
-        }
+        Matcher matcher;
 
         matcher = WHATSAPP_DRAFT.matcher(command);
         if (matcher.matches()) {
@@ -114,6 +109,65 @@ public final class DeviceCommandRouter {
         }
 
         return null;
+    }
+
+    private static final class SearchRequest {
+        final String app;
+        final String query;
+
+        SearchRequest(String app, String query) {
+            this.app = app;
+            this.query = query;
+        }
+    }
+
+    private static String stripWakePhrase(String command) {
+        return command.replaceFirst(
+                "(?i)^[\\\\s,.:;!?]*(?:(?:hey|okay|ok)\\\\s+)?ultron\\\\b[,!:.]?\\\\s*",
+                "").trim();
+    }
+
+    private static SearchRequest extractSearchRequest(String command) {
+        Matcher matcher = APP_FIRST_SEARCH.matcher(command);
+        String app;
+        String query;
+
+        if (matcher.matches()) {
+            app = matcher.group(1).toLowerCase(Locale.ROOT);
+            query = matcher.group(2);
+        } else {
+            matcher = SEARCH_APP_FOR.matcher(command);
+            if (matcher.matches()) {
+                app = matcher.group(1).toLowerCase(Locale.ROOT);
+                query = matcher.group(2);
+            } else {
+                matcher = SEARCH_ON_APP.matcher(command);
+                if (!matcher.matches()) return null;
+                query = matcher.group(1);
+                app = matcher.group(2).toLowerCase(Locale.ROOT);
+            }
+        }
+
+        query = query == null ? "" : query.trim();
+        query = query.replaceAll("[\\\\s,.;:!?]+$", "").trim();
+        if (query.isEmpty()) return null;
+
+        return new SearchRequest(app, query);
+    }
+
+    private static boolean openSearch(Activity activity, String app, String query) {
+        String url = buildSearchUrl(app, query);
+        String packageName = packageFor(app);
+
+        // Prefer the requested app, then fall back to the user's browser.
+        try {
+            Intent appIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            appIntent.setPackage(packageName);
+            activity.startActivity(appIntent);
+            return true;
+        } catch (ActivityNotFoundException ignored) {
+            return openUrl(activity, url);
+        }
     }
 
     private static String openWhatsAppDraft(Activity activity, String message) {
