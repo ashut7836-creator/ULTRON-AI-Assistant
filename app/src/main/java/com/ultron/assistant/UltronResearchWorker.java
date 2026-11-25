@@ -124,9 +124,9 @@ public final class UltronResearchWorker extends Worker {
             setProgressAsync(new Data.Builder().putInt("progress", 85).build());
 
             GroundingMetadata metadata = null;
-            List<Candidate> candidates = response.candidates;
-            if (candidates != null && !candidates.isEmpty()) {
-                metadata = candidates.get(0).groundingMetadata;
+            Candidate[] candidates = response.getCandidates();
+            if (candidates != null && candidates.length > 0) {
+                metadata = candidates[0].getGroundingMetadata();
             }
 
             String searchEntryHtml = null;
@@ -134,30 +134,30 @@ public final class UltronResearchWorker extends Worker {
             Map<Integer, Integer> sourceNumberByChunk = new LinkedHashMap<>();
 
             if (metadata != null) {
-                SearchEntryPoint searchEntryPoint = metadata.searchEntryPoint;
+                SearchEntryPoint searchEntryPoint = metadata.getSearchEntryPoint();
                 if (searchEntryPoint != null) {
-                    searchEntryHtml = searchEntryPoint.renderedContent;
+                    searchEntryHtml = searchEntryPoint.getRenderedContent();
                 }
 
-                List<GroundingChunk> chunks = metadata.groundingChunks;
+                List<GroundingChunk> chunks = metadata.getGroundingChunks();
                 if (chunks != null) {
                     for (int index = 0; index < chunks.size(); index++) {
                         GroundingChunk chunk = chunks.get(index);
                         if (chunk == null) continue;
 
-                        WebGroundingChunk web = chunk.web;
-                        if (web == null || !isSafeWebUri(web.uri)) continue;
+                        WebGroundingChunk web = chunk.getWeb();
+                        if (web == null || !isSafeWebUri(web.getUri())) continue;
 
-                        String title = web.title == null || web.title.trim().isEmpty()
-                                ? Uri.parse(web.uri).getHost()
-                                : web.title.trim();
+                        String title = web.getTitle() == null || web.getTitle().trim().isEmpty()
+                                ? Uri.parse(web.getUri()).getHost()
+                                : web.getTitle().trim();
 
-                        sources.add(new UltronResearchStore.Source(title, web.uri));
+                        sources.add(new UltronResearchStore.Source(title, web.getUri()));
                         sourceNumberByChunk.put(index, sources.size());
                     }
                 }
 
-                report = addInlineSourceMarkers(report, metadata.groundingSupports,
+                report = addInlineSourceMarkers(report, metadata.getGroundingSupports(),
                         sourceNumberByChunk);
             }
 
@@ -211,12 +211,12 @@ public final class UltronResearchWorker extends Worker {
 
         Map<Integer, Set<Integer>> marks = new LinkedHashMap<>();
         for (GroundingSupport support : supports) {
-            if (support == null || support.segment == null) continue;
+            if (support == null || support.getSegment() == null) continue;
 
             // The response text convenience field is the first text part.
-            if (support.segment.partIndex != 0) continue;
+            if (support.getSegment().getPartIndex() != 0) continue;
 
-            int end = support.segment.endIndex;
+            int end = support.getSegment().getEndIndex();
             if (end < 0 || end > report.length()) continue;
 
             Set<Integer> numbers = marks.get(end);
@@ -225,7 +225,7 @@ public final class UltronResearchWorker extends Worker {
                 marks.put(end, numbers);
             }
 
-            List<Integer> indices = support.groundingChunkIndices;
+            List<Integer> indices = support.getGroundingChunkIndices();
             if (indices == null) continue;
             for (Integer index : indices) {
                 if (index == null) continue;
