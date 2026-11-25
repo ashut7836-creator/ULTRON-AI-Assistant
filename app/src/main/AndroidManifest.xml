@@ -14,6 +14,7 @@
     </queries>
 
     <application
+        android:name=".UltronApplication"
         android:allowBackup="false"
         android:label="ULTRON ⚡"
         android:supportsRtl="true"

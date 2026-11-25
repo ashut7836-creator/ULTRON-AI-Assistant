@@ -32,6 +32,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.firebase.FirebaseApp;
+
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -62,6 +64,8 @@ public class MainActivity extends Activity {
     private boolean waitingForOverlaySettings;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private SpeechOutput speechOutput;
+    private GeminiBrain geminiBrain;
+    private TextView aiLinkStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,6 +79,7 @@ public class MainActivity extends Activity {
 
         buildInterface();
         speechOutput = new SpeechOutput(this);
+        initializeGeminiBrain();
 
         if (ACTION_FROM_WAKE.equals(getIntent().getAction())) {
             uiHandler.postDelayed(this::startVoiceInput, 700);
@@ -458,6 +463,9 @@ public class MainActivity extends Activity {
         TextView valueView = text(value, 10, WHITE, true);
         valueView.setGravity(Gravity.CENTER);
         valueView.setLetterSpacing(0.04f);
+        if ("AI LINK".equals(label)) {
+            aiLinkStatus = valueView;
+        }
         tile.addView(valueView, matchWrap());
 
         addSpace(tile, 5);
@@ -568,10 +576,66 @@ public class MainActivity extends Activity {
             return;
         }
 
-        connectionText.setText("COMMAND RECEIVED  /  READY");
-        resultText.setText("Command received: \"" + command + "\"\n\n" +
-                "The AI brain is not connected yet. It will be added in the next development stage.");
-        speakResponse("I received your command. My AI brain is not connected yet.");
+        askGemini(command);
+    }
+
+    private void initializeGeminiBrain() {
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            setAiLinkStatus("SETUP");
+            return;
+        }
+
+        try {
+            geminiBrain = GeminiBrain.create();
+            setAiLinkStatus("READY");
+        } catch (Exception e) {
+            geminiBrain = null;
+            setAiLinkStatus("OFFLINE");
+        }
+    }
+
+    private void setAiLinkStatus(String status) {
+        if (aiLinkStatus != null) {
+            aiLinkStatus.setText(status);
+        }
+    }
+
+    private void askGemini(String command) {
+        if (geminiBrain == null) {
+            connectionText.setText("GEMINI SETUP REQUIRED");
+            resultText.setText(
+                    "The Gemini connection is prepared in ULTRON, but its Firebase project " +
+                    "is not connected yet. Complete the Firebase AI Logic setup and add " +
+                    "app/google-services.json to enable AI replies.");
+            speakResponse("Gemini setup is still required.");
+            return;
+        }
+
+        connectionText.setText("GEMINI  /  THINKING");
+        resultText.setText("ULTRON is thinking...");
+        geminiBrain.ask(command, new GeminiBrain.Callback() {
+            @Override
+            public void onSuccess(String answer) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    connectionText.setText("GEMINI  /  RESPONSE READY");
+                    resultText.setText(answer);
+                    setAiLinkStatus("ONLINE");
+                    speakResponse(answer);
+                });
+            }
+
+            @Override
+            public void onError(String message, Throwable cause) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    connectionText.setText("GEMINI  /  CONNECTION ISSUE");
+                    resultText.setText(message);
+                    setAiLinkStatus("CHECK LINK");
+                    speakResponse(message);
+                });
+            }
+        });
     }
 
     private void openApp(String packageName, String appName) {
