@@ -30,6 +30,8 @@ dependencies {
     // Firebase AI Logic provides a mobile-safe Gemini connection protected by App Check.
     implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-ai")
+    // Firebase function-call arguments and responses use Kotlin serialization JSON types.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
     implementation("com.google.guava:guava:31.0.1-android")
 
     // Development builds use the debug provider; release builds use Play Integrity.
