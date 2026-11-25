@@ -280,37 +280,25 @@ public class MainActivity extends Activity {
         return tile;
     }
 
-    private TextView appButton(String symbol, String label) {
-        LinearLayout wrapper = new LinearLayout(this);
-        wrapper.setOrientation(LinearLayout.HORIZONTAL);
-        wrapper.setGravity(Gravity.CENTER);
-        wrapper.setPadding(dp(8), 0, dp(8), 0);
-        wrapper.setBackground(panelBackground(PANEL_LIGHT, Color.rgb(34, 76, 99), 12));
+    private View appButton(String symbol, String label) {
+        LinearLayout button = new LinearLayout(this);
+        button.setOrientation(LinearLayout.HORIZONTAL);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setBackground(panelBackground(
+                PANEL_LIGHT, Color.rgb(34, 76, 99), 12));
 
-        TextView icon = text(symbol, 21, GOLD, true);
-        wrapper.addView(icon, new LinearLayout.LayoutParams(
+        TextView icon = text(symbol, 20, GOLD, true);
+        button.addView(icon, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView name = text("  " + label, 11, WHITE, true);
         name.setLetterSpacing(0.06f);
-        wrapper.addView(name, new LinearLayout.LayoutParams(
+        button.addView(name, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        // A TextView is returned for a consistent clickable view; the wrapper is used as its background.
-        TextView button = text("", 1, WHITE, false);
-        button.setGravity(Gravity.CENTER);
-        button.setBackground(wrapper.getBackground());
-        button.setText(label);
-        button.setTextColor(WHITE);
-        button.setTextSize(11);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setCompoundDrawablePadding(dp(8));
-        button.setPadding(dp(8), 0, dp(8), 0);
-        button.setGravity(Gravity.CENTER);
-        button.setBackground(panelBackground(PANEL_LIGHT, Color.rgb(34, 76, 99), 12));
-        button.setText(label);
         return button;
     }
 
