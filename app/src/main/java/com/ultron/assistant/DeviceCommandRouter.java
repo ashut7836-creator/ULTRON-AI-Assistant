@@ -18,11 +18,11 @@ import java.util.regex.Pattern;
 public final class DeviceCommandRouter {
 
     private static final Pattern APP_FIRST_SEARCH = Pattern.compile(
-            ".*\\b(youtube|instagram)\\b.*\\b(?:search|find|look\\s+up)\\b\\s+(?:for\\s+)?(.+)$",
+            ".*\\b(youtube|instagram|google)\\b.*\\b(?:search|find|look\\s+up)\\b\\s+(?:for\\s+)?(.+)$",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern SEARCH_APP_FOR = Pattern.compile(
-            ".*\\b(?:search|find|look\\s+up)\\s+(youtube|instagram)\\s+(?:for\\s+)?(.+)$",
+            ".*\\b(?:search|find|look\\s+up)\\s+(youtube|instagram|google)\\s+(?:for\\s+)?(.+)$",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern SEARCH_ON_APP = Pattern.compile(
@@ -30,7 +30,7 @@ public final class DeviceCommandRouter {
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern OPEN_APP = Pattern.compile(
-            "^(?:please\\s+)?(?:open|launch|start)\\s+(youtube|instagram|whatsapp)$",
+            "^(?:please\\s+)?(?:open|launch|start)\\s+(youtube|instagram|whatsapp|google)$",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern WHATSAPP_DRAFT = Pattern.compile(
@@ -199,7 +199,10 @@ public final class DeviceCommandRouter {
         if ("youtube".equals(app)) {
             return "https://www.youtube.com/results?search_query=" + encoded;
         }
-        return "https://www.instagram.com/explore/search/keyword/?q=" + encoded;
+        if ("instagram".equals(app)) {
+            return "https://www.instagram.com/explore/search/keyword/?q=" + encoded;
+        }
+        return "https://www.google.com/search?q=" + encoded;
     }
 
     private static String packageFor(String app) {
@@ -208,6 +211,8 @@ public final class DeviceCommandRouter {
                 return "com.google.android.youtube";
             case "instagram":
                 return "com.instagram.android";
+            case "google":
+                return "com.google.android.googlequicksearchbox";
             default:
                 return "com.whatsapp";
         }
