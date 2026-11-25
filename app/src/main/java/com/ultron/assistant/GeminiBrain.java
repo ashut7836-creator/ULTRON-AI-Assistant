@@ -274,7 +274,7 @@ public final class GeminiBrain {
                             new FunctionResponsePart(
                                     functionCall.getName(),
                                     toolResult,
-                                    functionCall.id,
+                                    functionCall.getId(),
                                     Collections.<Part>emptyList())));
 
             ListenableFuture<GenerateContentResponse> followUp =
@@ -326,16 +326,13 @@ public final class GeminiBrain {
         Map<String, String> safe = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> entry : raw.entrySet()) {
             JsonElement value = entry.getValue();
-            if (!(value instanceof JsonPrimitive)) return null;
-
-            JsonPrimitive primitive = (JsonPrimitive) value;
-            String encoded = primitive.toString();
-            // Require a JSON string, not a number, boolean, object, or array.
-            if (encoded.length() < 2
-                    || encoded.charAt(0) != '"'
-                    || encoded.charAt(encoded.length() - 1) != '"') {
+            JsonPrimitive primitive;
+            try {
+                primitive = JsonElementKt.getJsonPrimitive(value);
+            } catch (IllegalArgumentException notPrimitive) {
                 return null;
             }
+            if (!primitive.isString()) return null;
 
             String decoded = JsonElementKt.getContentOrNull(primitive);
             if (decoded == null) return null;
