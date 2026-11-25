@@ -630,7 +630,14 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     connectionText.setText("GEMINI  /  CONNECTION ISSUE");
-                    resultText.setText(message);
+                    String displayMessage = message;
+                    if ((getApplicationInfo().flags
+                            & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                            && cause != null) {
+                        displayMessage += "\\n\\nDEBUG DIAGNOSTICS\\n"
+                                + summarizeGeminiError(cause);
+                    }
+                    resultText.setText(displayMessage);
                     setAiLinkStatus("CHECK LINK");
                     speakResponse(message);
                 });
@@ -656,6 +663,42 @@ public class MainActivity extends Activity {
             resultText.setText("Could not open " + appName + ".");
             speakResponse("I could not open " + appName + ".");
         }
+    }
+
+    /**
+     * Shows a short exception chain only in debuggable builds.
+     * Never displays stack traces or credential-like values.
+     */
+    private String summarizeGeminiError(Throwable error) {
+        StringBuilder details = new StringBuilder();
+        Throwable current = error;
+        int depth = 0;
+
+        while (current != null && depth < 5) {
+            if (depth > 0) {
+                details.append("\\nCaused by: ");
+            }
+
+            details.append(current.getClass().getSimpleName());
+
+            String message = current.getMessage();
+            if (message != null && !message.trim().isEmpty()) {
+                String safeMessage = message.trim()
+                        .replaceAll("(?i)(key|token|authorization)=([^&\\s]+)",
+                                "$1=[REDACTED]")
+                        .replaceAll("AIza[0-9A-Za-z_-]{20,}", "[REDACTED_API_KEY]");
+                details.append(": ").append(safeMessage);
+            }
+
+            Throwable next = current.getCause();
+            if (next == current) {
+                break;
+            }
+            current = next;
+            depth++;
+        }
+
+        return details.toString();
     }
 
     private void speakResponse(String message) {
