@@ -139,7 +139,7 @@ public final class WhatsAppContactHelper {
                 String contactId = cursor.getString(idIndex);
 
                 if (name == null || number == null) continue;
-                String digits = toWhatsAppDigits(number);
+                String digits = toWhatsAppDigits(context, number);
                 if (digits == null) continue;
 
                 Contact candidate = new Contact(name.trim(), number.trim(), digits);
@@ -160,29 +160,26 @@ public final class WhatsAppContactHelper {
      * WhatsApp click-to-chat requires a country-coded number. Prefer Android's
      * E.164 formatter for the device's configured region; never invent a code.
      */
-    private static String toWhatsAppDigits(String rawNumber) {
+    private static String toWhatsAppDigits(Context context, String rawNumber) {
         if (rawNumber == null || rawNumber.trim().isEmpty()) return null;
 
-        // Prefer the actual mobile network's region, not the UI language/locale.
-        // If the device has no telephony country and the contact has no explicit
-        // international prefix, refuse to guess a country calling code.
+        // Prefer the actual mobile network region, not the device's UI language.
+        // getNetworkCountryIso does not expose the subscriber's phone number.
         String region = null;
         try {
-            if (android.os.Build.VERSION.SDK_INT >= 26
-                    && android.content.pm.PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS != null) {
-                TelephonyManager telephony = (TelephonyManager) null;
+            if (context.getPackageManager().hasSystemFeature(
+                    android.content.pm.PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS)) {
+                TelephonyManager telephony = (TelephonyManager)
+                        context.getSystemService(Context.TELEPHONY_SERVICE);
+                if (telephony != null) {
+                    String networkRegion = telephony.getNetworkCountryIso();
+                    if (networkRegion != null && !networkRegion.trim().isEmpty()) {
+                        region = networkRegion.toUpperCase(Locale.ROOT);
+                    }
+                }
             }
         } catch (RuntimeException ignored) {
             region = null;
-        }
-
-        // getNetworkCountryIso is available on the app's minSdk and does not
-        // require reading the user's phone number or SIM identity.
-        try {
-            TelephonyManager telephony = (TelephonyManager)
-                    android.content.ContextWrapper.class.cast(null);
-        } catch (RuntimeException ignored) {
-            // The real context is supplied by the method overload below.
         }
 
         return normalizeInternationalNumber(rawNumber, region);
@@ -199,6 +196,8 @@ public final class WhatsAppContactHelper {
         }
 
         String source = e164 != null ? e164 : rawNumber.trim();
+        // Without a known network region, only accept numbers already written
+        // with an explicit international prefix. Never guess a calling code.
         if (e164 == null && !source.startsWith("+") && !source.startsWith("00")) {
             return null;
         }
@@ -209,4 +208,5 @@ public final class WhatsAppContactHelper {
         }
         if (digits.length() < 8 || digits.length() > 15) return null;
         return digits;
-    }}
+    }
+}
