@@ -745,13 +745,20 @@ public class MainActivity extends Activity {
         askGemini(command);
     }
 
+    private static String stripCommandWakePhrase(String rawCommand) {
+        if (rawCommand == null) return "";
+        return rawCommand.trim().replaceFirst(
+                "(?i)^[\\s,.:;!?]*(?:(?:hey|okay|ok)\\s+)?ultron\\b[,!:.]?\\s*",
+                "").trim();
+    }
+
     /**
      * Starts and manages user-requested background research tasks.
      * The topic is sent to Firebase AI Logic / Google Search only after the
      * user confirms the preview dialog.
      */
     private boolean handleResearchCommand(String command) {
-        String clean = command == null ? "" : command.trim();
+        String clean = stripCommandWakePhrase(command);
         String normalized = clean.toLowerCase(Locale.ROOT);
 
         if ("show research".equals(normalized)
@@ -819,7 +826,9 @@ public class MainActivity extends Activity {
                         + "with Google Search enabled. It needs an internet connection and may "
                         + "use mobile data and your project's AI quota. "
                         + "The report and source links will be saved on this phone. "
-                        + "Android may defer the task while the app is in the background.")
+                        + "Android may defer the task while the app is in the background. "
+                        + "Completion notifications appear only when Android notifications are allowed; "
+                        + "you can also check the task list manually.")
                 .setNegativeButton("Cancel", (dialog, which) ->
                         showLocalMessage("RESEARCH  /  CANCELLED", "No research task was started."))
                 .setPositiveButton("Start research", (dialog, which) ->
@@ -1089,7 +1098,7 @@ public class MainActivity extends Activity {
      * WorkManager performs the deferred work even after ULTRON's screen closes.
      */
     private boolean handleReminderCommand(String command) {
-        String clean = command == null ? "" : command.trim();
+        String clean = stripCommandWakePhrase(command);
         String normalized = clean.toLowerCase(Locale.ROOT);
 
         if ("show reminders".equals(normalized)
