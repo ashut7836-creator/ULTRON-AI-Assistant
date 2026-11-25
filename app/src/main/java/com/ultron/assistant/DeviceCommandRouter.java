@@ -26,7 +26,7 @@ public final class DeviceCommandRouter {
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern SEARCH_ON_APP = Pattern.compile(
-            ".*\\b(?:search|find|look\\s+up)\\b\\s+(?:for\\s+)?(.+?)\\s+\\b(?:on|in)\\s+(youtube|instagram)\\b.*",
+            ".*\\b(?:search|find|look\\s+up)\\b\\s+(?:for\\s+)?(.+?)\\s+\\b(?:on|in)\\s+(youtube|instagram|google)\\b.*",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern OPEN_APP = Pattern.compile(
