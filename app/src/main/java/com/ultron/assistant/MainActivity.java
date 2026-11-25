@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_WAKE_MIC = 2201;
     private static final int REQUEST_WAKE_NOTIFICATIONS = 2202;
     private static final int REQUEST_WAKE_OVERLAY = 2203;
+    private static final int REQUEST_CONTACTS = 2204;
 
     public static final String ACTION_FROM_WAKE =
             "com.ultron.assistant.action.FROM_WAKE";
@@ -69,6 +70,9 @@ public class MainActivity extends Activity {
     private GeminiBrain geminiBrain;
     private UltronMemory ultronMemory;
     private String pendingMemorySuggestion;
+    private String pendingContactName;
+    private String pendingWhatsAppMessage;
+    private GeminiBrain.ToolCallback pendingContactToolCallback;
     private TextView aiLinkStatus;
 
     @Override
@@ -392,6 +396,27 @@ public class MainActivity extends Activity {
                                            String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
+        if (requestCode == REQUEST_CONTACTS) {
+            String contactName = pendingContactName;
+            String message = pendingWhatsAppMessage;
+            GeminiBrain.ToolCallback callback = pendingContactToolCallback;
+            pendingContactName = null;
+            pendingWhatsAppMessage = null;
+            pendingContactToolCallback = null;
+
+            boolean granted = checkSelfPermission(Manifest.permission.READ_CONTACTS)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (granted && contactName != null && message != null) {
+                resolveContactWhatsAppDraft(contactName, message, callback);
+            } else {
+                finishContactDraft(
+                        callback,
+                        false,
+                        "Contacts permission was not granted. No contact was read and no message was opened.");
+            }
+            return;
+        }
+
         if (requestCode == REQUEST_WAKE_MIC
                 || requestCode == REQUEST_WAKE_NOTIFICATIONS) {
             boolean micGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
@@ -627,6 +652,16 @@ public class MainActivity extends Activity {
             }
         }
 
+        // Named WhatsApp recipients are resolved locally before the generic draft route.
+        // Contact names and phone numbers are not sent to Gemini or stored in memory.
+        WhatsAppContactHelper.DraftRequest contactDraft =
+                WhatsAppContactHelper.parseDraftCommand(command);
+        if (contactDraft != null) {
+            startContactWhatsAppDraft(
+                    contactDraft.contactName, contactDraft.message, null);
+            return;
+        }
+
         // Run only explicitly supported, permission-conscious actions locally.
         // Unknown requests continue to Gemini as ordinary conversation.
         String actionResult = DeviceCommandRouter.handle(this, command);
@@ -680,7 +715,19 @@ public class MainActivity extends Activity {
             }
 
             if ("draft_whatsapp_message".equals(toolName)) {
+                String recipientName = arguments == null
+                        ? null : arguments.get("contact_name");
                 String draftText = arguments == null ? null : arguments.get("message");
+                if (recipientName != null && !recipientName.trim().isEmpty()) {
+                    if (draftText == null || draftText.trim().isEmpty()
+                            || draftText.length() > 1000) {
+                        callback.onResult(false, "The WhatsApp draft was invalid. Nothing was opened or sent.");
+                    } else {
+                        startContactWhatsAppDraft(
+                                recipientName.trim(), draftText.trim(), callback);
+                    }
+                    return;
+                }
                 if (draftText == null || draftText.trim().isEmpty()
                         || draftText.length() > 1000) {
                     callback.onResult(false, "The WhatsApp draft was invalid. Nothing was opened or sent.");
@@ -706,6 +753,145 @@ public class MainActivity extends Activity {
 
             executeAgentTool(toolName, arguments, callback);
         });
+    }
+
+    /**
+     * Ask for address-book access only when the user requests a named contact.
+     * Contact lookup itself is performed locally and never passed to Gemini.
+     */
+    private void startContactWhatsAppDraft(
+            String contactName,
+            String message,
+            GeminiBrain.ToolCallback callback) {
+        String cleanName = contactName == null ? "" : contactName.trim();
+        String cleanMessage = message == null ? "" : message.trim();
+
+        if (cleanName.isEmpty() || cleanName.length() > 80
+                || cleanMessage.isEmpty() || cleanMessage.length() > 1000) {
+            finishContactDraft(callback, false, "The contact name or message is invalid.");
+            return;
+        }
+
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS)
+                != PackageManager.PERMISSION_GRANTED) {
+            pendingContactName = cleanName;
+            pendingWhatsAppMessage = cleanMessage;
+            pendingContactToolCallback = callback;
+            requestPermissions(
+                    new String[]{Manifest.permission.READ_CONTACTS},
+                    REQUEST_CONTACTS);
+            return;
+        }
+
+        resolveContactWhatsAppDraft(cleanName, cleanMessage, callback);
+    }
+
+    private void resolveContactWhatsAppDraft(
+            String contactName,
+            String message,
+            GeminiBrain.ToolCallback callback) {
+        connectionText.setText("CONTACTS  /  SEARCHING LOCALLY");
+        resultText.setText("ULTRON is checking your contacts on this device.");
+
+        Thread lookup = new Thread(() -> {
+            java.util.List<WhatsAppContactHelper.Contact> matches =
+                    WhatsAppContactHelper.findContacts(
+                            getApplicationContext(), contactName);
+
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    finishContactDraft(callback, false, "ULTRON closed before the contact lookup finished.");
+                    return;
+                }
+
+                if (matches.isEmpty()) {
+                    finishContactDraft(
+                            callback,
+                            false,
+                            "I couldn't find a matching contact with a usable phone number. Check the saved name and number format.");
+                    return;
+                }
+
+                if (matches.size() == 1) {
+                    showWhatsAppContactPreview(matches.get(0), message, callback);
+                    return;
+                }
+
+                String[] labels = new String[matches.size()];
+                for (int i = 0; i < matches.size(); i++) {
+                    WhatsAppContactHelper.Contact contact = matches.get(i);
+                    labels[i] = contact.displayName + "  "
+                            + contact.maskedNumber();
+                }
+
+                new AlertDialog.Builder(this)
+                        .setTitle("Choose the correct contact")
+                        .setItems(labels, (dialog, which) -> {
+                            if (which >= 0 && which < matches.size()) {
+                                showWhatsAppContactPreview(
+                                        matches.get(which), message, callback);
+                            } else {
+                                finishContactDraft(callback, false, "No contact was selected.");
+                            }
+                        })
+                        .setOnCancelListener(dialog ->
+                                finishContactDraft(callback, false, "Contact selection cancelled."))
+                        .show();
+            });
+        }, "ultron-contact-lookup");
+        lookup.start();
+    }
+
+    private void showWhatsAppContactPreview(
+            WhatsAppContactHelper.Contact contact,
+            String message,
+            GeminiBrain.ToolCallback callback) {
+        String preview = "Recipient: " + contact.displayName
+                + "\nNumber: " + contact.maskedNumber()
+                + "\n\nMessage:\n" + message
+                + "\n\nULTRON will open a WhatsApp draft only. "
+                + "Nothing will be sent automatically. Review it in WhatsApp and tap Send yourself.";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Review recipient and message")
+                .setMessage(preview)
+                .setNegativeButton("Cancel", (dialog, which) ->
+                        finishContactDraft(callback, false, "Cancelled. No message was sent."))
+                .setPositiveButton("Open WhatsApp draft", (dialog, which) -> {
+                    String url = "https://wa.me/" + contact.whatsappDigits
+                            + "?text=" + Uri.encode(message);
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                        startActivity(intent);
+                        finishContactDraft(
+                                callback,
+                                true,
+                                "WhatsApp opened with the reviewed draft for the selected contact. No message was sent.");
+                    } catch (Exception error) {
+                        finishContactDraft(
+                                callback,
+                                false,
+                                "Android couldn't open the WhatsApp draft. No message was sent.");
+                    }
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    private void finishContactDraft(
+            GeminiBrain.ToolCallback callback,
+            boolean success,
+            String message) {
+        if (callback != null) {
+            callback.onResult(success, message);
+            return;
+        }
+
+        connectionText.setText(success
+                ? "WHATSAPP  /  DRAFT OPENED"
+                : "WHATSAPP  /  NOT SENT");
+        resultText.setText(message);
+        speakResponse(message);
     }
 
     private void executeAgentTool(
