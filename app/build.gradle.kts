@@ -33,6 +33,8 @@ dependencies {
     // Firebase function-call arguments and responses use Kotlin serialization JSON types.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
     implementation("com.google.guava:guava:31.0.1-android")
+    // Persistent, OS-managed background reminders and task scheduling.
+    implementation("androidx.work:work-runtime:2.12.0")
 
     // Development builds use the debug provider; release builds use Play Integrity.
     debugImplementation("com.google.firebase:firebase-appcheck-debug")
