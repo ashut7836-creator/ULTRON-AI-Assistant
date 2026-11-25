@@ -2,6 +2,7 @@ package com.ultron.assistant;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -36,6 +37,7 @@ import com.google.firebase.FirebaseApp;
 
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
@@ -655,12 +657,54 @@ public class MainActivity extends Activity {
         }
 
         try {
-            geminiBrain = GeminiBrain.create(ultronMemory);
+            geminiBrain = GeminiBrain.create(ultronMemory, this::handleAgentToolCall);
             setAiLinkStatus("READY");
         } catch (Exception e) {
             geminiBrain = null;
             setAiLinkStatus("OFFLINE");
         }
+    }
+
+    /**
+     * Receives Gemini's structured tool request. DeviceCommandRouter revalidates
+     * every argument against its own fixed allowlist before opening anything.
+     */
+    private void handleAgentToolCall(
+            String toolName,
+            Map<String, String> arguments,
+            GeminiBrain.ToolCallback callback) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) {
+                callback.onResult(false, "ULTRON is closing. The action was cancelled.");
+                return;
+            }
+
+            if ("draft_whatsapp_message".equals(toolName)) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Open WhatsApp draft?")
+                        .setMessage(
+                                "ULTRON will open WhatsApp with a draft. It will not send anything. " +
+                                "You choose the recipient, review the message, and tap Send yourself.")
+                        .setNegativeButton("Cancel", (dialog, which) ->
+                                callback.onResult(false, "Cancelled. No message was sent."))
+                        .setPositiveButton("Open draft", (dialog, which) ->
+                                executeAgentTool(toolName, arguments, callback))
+                        .setCancelable(false)
+                        .show();
+                return;
+            }
+
+            executeAgentTool(toolName, arguments, callback);
+        });
+    }
+
+    private void executeAgentTool(
+            String toolName,
+            Map<String, String> arguments,
+            GeminiBrain.ToolCallback callback) {
+        DeviceCommandRouter.ToolActionResult result =
+                DeviceCommandRouter.executeTool(this, toolName, arguments);
+        callback.onResult(result.success, result.message);
     }
 
     private void setAiLinkStatus(String status) {
