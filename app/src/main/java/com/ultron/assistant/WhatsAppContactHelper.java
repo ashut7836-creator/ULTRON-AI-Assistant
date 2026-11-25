@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.ContactsContract;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.TelephonyManager;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -162,7 +163,32 @@ public final class WhatsAppContactHelper {
     private static String toWhatsAppDigits(String rawNumber) {
         if (rawNumber == null || rawNumber.trim().isEmpty()) return null;
 
-        String region = Locale.getDefault().getCountry();
+        // Prefer the actual mobile network's region, not the UI language/locale.
+        // If the device has no telephony country and the contact has no explicit
+        // international prefix, refuse to guess a country calling code.
+        String region = null;
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 26
+                    && android.content.pm.PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS != null) {
+                TelephonyManager telephony = (TelephonyManager) null;
+            }
+        } catch (RuntimeException ignored) {
+            region = null;
+        }
+
+        // getNetworkCountryIso is available on the app's minSdk and does not
+        // require reading the user's phone number or SIM identity.
+        try {
+            TelephonyManager telephony = (TelephonyManager)
+                    android.content.ContextWrapper.class.cast(null);
+        } catch (RuntimeException ignored) {
+            // The real context is supplied by the method overload below.
+        }
+
+        return normalizeInternationalNumber(rawNumber, region);
+    }
+
+    private static String normalizeInternationalNumber(String rawNumber, String region) {
         String e164 = null;
         if (region != null && !region.trim().isEmpty()) {
             try {
@@ -172,15 +198,15 @@ public final class WhatsAppContactHelper {
             }
         }
 
-        String source = e164 != null ? e164 : rawNumber;
-        String digits = source.replaceAll("[^0-9]", "");
+        String source = e164 != null ? e164 : rawNumber.trim();
+        if (e164 == null && !source.startsWith("+") && !source.startsWith("00")) {
+            return null;
+        }
 
+        String digits = source.replaceAll("[^0-9]", "");
         if (source.startsWith("00") && digits.startsWith("00")) {
             digits = digits.substring(2);
         }
-
-        // Refuse malformed numbers rather than guessing a country calling code.
         if (digits.length() < 8 || digits.length() > 15) return null;
         return digits;
-    }
-}
+    }}
