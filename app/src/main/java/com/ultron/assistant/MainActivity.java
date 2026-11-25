@@ -1004,9 +1004,26 @@ public class MainActivity extends Activity {
             pendingContactName = cleanName;
             pendingWhatsAppMessage = cleanMessage;
             pendingContactToolCallback = callback;
-            requestPermissions(
-                    new String[]{Manifest.permission.READ_CONTACTS},
-                    REQUEST_CONTACTS);
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Allow contact lookup?")
+                    .setMessage(
+                            "ULTRON will search your contacts on this phone for the name you said. " +
+                            "The contact list and phone numbers stay on this device; ULTRON does not " +
+                            "upload them to Gemini or save them in its memory.")
+                    .setNegativeButton("Cancel", (dialog, which) -> {
+                        pendingContactName = null;
+                        pendingWhatsAppMessage = null;
+                        pendingContactToolCallback = null;
+                        finishContactDraft(
+                                callback, false, "Contact lookup cancelled. No message was opened.");
+                    })
+                    .setPositiveButton("Continue", (dialog, which) ->
+                            requestPermissions(
+                                    new String[]{Manifest.permission.READ_CONTACTS},
+                                    REQUEST_CONTACTS))
+                    .setCancelable(false)
+                    .show();
             return;
         }
 
