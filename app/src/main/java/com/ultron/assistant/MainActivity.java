@@ -268,6 +268,10 @@ public class MainActivity extends Activity {
                 "ULTRON core initialized. AI connection will be enabled in the next stage.",
                 13, WHITE, false);
         resultText.setGravity(Gravity.START);
+        if ((getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            resultText.setTextIsSelectable(true);
+        }
         responseCard.addView(resultText, matchWrap());
 
         root.addView(responseCard, matchWrap());
@@ -635,7 +639,9 @@ public class MainActivity extends Activity {
                             & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
                             && cause != null) {
                         displayMessage += "\n\nDEBUG DIAGNOSTICS\n"
-                                + summarizeGeminiError(cause);
+                                + summarizeGeminiError(cause)
+                                + "\n\nAPP CHECK DEBUG TOKEN (KEEP PRIVATE)\n"
+                                + readDebugAppCheckSecret();
                     }
                     resultText.setText(displayMessage);
                     setAiLinkStatus("CHECK LINK");
@@ -662,6 +668,36 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             resultText.setText("Could not open " + appName + ".");
             speakResponse("I could not open " + appName + ".");
+        }
+    }
+
+    /**
+     * Reads the Android Debug App Check provider's locally persisted secret.
+     * This uses an internal Firebase preference name for temporary debugging only.
+     * The token is shown only in debuggable builds and is never logged or spoken.
+     */
+    private String readDebugAppCheckSecret() {
+        try {
+            com.google.firebase.FirebaseApp app =
+                    com.google.firebase.FirebaseApp.getInstance();
+            String persistenceKey =
+                    app.getName() + "+" + app.getOptions().getApplicationId();
+            String preferencesName =
+                    "com.google.firebase.appcheck.debug.store." + persistenceKey;
+            String secretKey =
+                    "com.google.firebase.appcheck.debug.DEBUG_SECRET";
+
+            android.content.SharedPreferences preferences =
+                    getSharedPreferences(preferencesName, MODE_PRIVATE);
+            String secret = preferences.getString(secretKey, null);
+
+            if (secret == null || secret.trim().isEmpty()) {
+                return "Not found in this app installation. Trigger one Gemini request and check again.";
+            }
+            return secret;
+        } catch (Exception error) {
+            return "Could not read the local debug token: "
+                    + error.getClass().getSimpleName();
         }
     }
 
