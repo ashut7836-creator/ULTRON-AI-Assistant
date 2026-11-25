@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private SpeechOutput speechOutput;
     private GeminiBrain geminiBrain;
+    private UltronMemory ultronMemory;
     private TextView aiLinkStatus;
 
     @Override
@@ -79,6 +80,7 @@ public class MainActivity extends Activity {
 
         buildInterface();
         speechOutput = new SpeechOutput(this);
+        ultronMemory = new UltronMemory(this);
         initializeGeminiBrain();
 
         if (ACTION_FROM_WAKE.equals(getIntent().getAction())) {
@@ -570,6 +572,24 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // User-controlled memory commands are handled locally and never sent to Gemini.
+        if (ultronMemory != null) {
+            try {
+                String memoryResult = ultronMemory.handleCommand(command);
+                if (memoryResult != null) {
+                    connectionText.setText("MEMORY  /  UPDATED");
+                    resultText.setText(memoryResult);
+                    speakResponse(memoryResult);
+                    return;
+                }
+            } catch (RuntimeException memoryError) {
+                connectionText.setText("MEMORY  /  UNAVAILABLE");
+                resultText.setText("ULTRON couldn't access its saved memory on this device.");
+                speakResponse("ULTRON memory is temporarily unavailable.");
+                return;
+            }
+        }
+
         // Run only explicitly supported, permission-conscious actions locally.
         // Unknown requests continue to Gemini as ordinary conversation.
         String actionResult = DeviceCommandRouter.handle(this, command);
@@ -600,7 +620,7 @@ public class MainActivity extends Activity {
         }
 
         try {
-            geminiBrain = GeminiBrain.create();
+            geminiBrain = GeminiBrain.create(ultronMemory);
             setAiLinkStatus("READY");
         } catch (Exception e) {
             geminiBrain = null;
