@@ -2,12 +2,21 @@ package com.ultron.assistant;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.speech.RecognizerIntent;
 import android.view.Gravity;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -23,20 +32,29 @@ public class MainActivity extends Activity {
 
     private static final int SPEECH_REQUEST = 1001;
 
+    private static final int BG = Color.rgb(4, 9, 18);
+    private static final int PANEL = Color.rgb(9, 21, 35);
+    private static final int PANEL_LIGHT = Color.rgb(13, 31, 49);
+    private static final int CYAN = Color.rgb(69, 224, 239);
+    private static final int CYAN_DIM = Color.rgb(35, 104, 125);
+    private static final int GOLD = Color.rgb(242, 184, 82);
+    private static final int WHITE = Color.rgb(229, 241, 249);
+    private static final int MUTED = Color.rgb(119, 153, 173);
+
     private EditText commandInput;
     private TextView resultText;
     private TextView connectionText;
-
-    private final int backgroundColor = Color.rgb(7, 12, 25);
-    private final int cyanColor = Color.rgb(47, 220, 235);
-    private final int whiteColor = Color.rgb(238, 245, 255);
+    private CoreView coreView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        getWindow().setStatusBarColor(backgroundColor);
-        getWindow().setNavigationBarColor(backgroundColor);
+        Window window = getWindow();
+        window.setStatusBarColor(BG);
+        window.setNavigationBarColor(BG);
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.getDecorView().setSystemUiVisibility(0);
 
         buildInterface();
     }
@@ -44,189 +62,302 @@ public class MainActivity extends Activity {
     private void buildInterface() {
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
+        scrollView.setClipToPadding(false);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(24), dp(28), dp(24), dp(28));
-        root.setBackgroundColor(backgroundColor);
-
+        root.setPadding(dp(20), dp(20), dp(20), dp(28));
+        root.setBackgroundColor(BG);
         scrollView.addView(root);
 
-        TextView brand = text("ULTRON ⚡", 32, cyanColor, true);
-        brand.setGravity(Gravity.CENTER);
-        root.addView(brand, matchWrap());
+        root.addView(buildHeader(), matchWrap());
 
-        TextView subtitle = text(
-                "YOUR PERSONAL AI ASSISTANT", 12,
-                Color.LTGRAY, false
-        );
-        subtitle.setLetterSpacing(0.15f);
-        subtitle.setGravity(Gravity.CENTER);
-        root.addView(subtitle, matchWrap());
+        addSpace(root, 26);
 
-        addSpace(root, 34);
+        TextView section = text("PERSONAL AI SYSTEM", 11, MUTED, true);
+        section.setLetterSpacing(0.20f);
+        section.setGravity(Gravity.CENTER);
+        root.addView(section, matchWrap());
 
-        TextView orb = text("⚡", 52, cyanColor, true);
-        orb.setGravity(Gravity.CENTER);
+        addSpace(root, 8);
 
-        GradientDrawable orbBackground = new GradientDrawable();
-        orbBackground.setShape(GradientDrawable.OVAL);
-        orbBackground.setColor(Color.rgb(15, 35, 55));
-        orbBackground.setStroke(dp(2), cyanColor);
-        orb.setBackground(orbBackground);
+        TextView greeting = text("How can I assist you?", 23, WHITE, true);
+        greeting.setGravity(Gravity.CENTER);
+        root.addView(greeting, matchWrap());
 
-        LinearLayout.LayoutParams orbParams =
-                new LinearLayout.LayoutParams(dp(118), dp(118));
-        orbParams.gravity = Gravity.CENTER;
-        root.addView(orb, orbParams);
+        addSpace(root, 10);
 
-        addSpace(root, 18);
+        coreView = new CoreView();
+        LinearLayout.LayoutParams coreParams =
+                new LinearLayout.LayoutParams(dp(258), dp(258));
+        coreParams.gravity = Gravity.CENTER;
+        root.addView(coreView, coreParams);
+        coreView.setOnClickListener(v -> startVoiceInput());
 
-        connectionText = text("READY FOR YOUR COMMAND", 13,
-                cyanColor, true);
+        connectionText = text("SYSTEM STANDBY  /  AWAITING INPUT", 11, CYAN, true);
+        connectionText.setLetterSpacing(0.12f);
         connectionText.setGravity(Gravity.CENTER);
         root.addView(connectionText, matchWrap());
 
-        addSpace(root, 28);
+        addSpace(root, 20);
 
-        Button voiceButton = makeButton(
-                "🎙  TAP TO SPEAK", cyanColor, backgroundColor
-        );
-        root.addView(voiceButton, matchButton());
-        voiceButton.setOnClickListener(v -> startVoiceInput());
-
-        addSpace(root, 22);
-
-        TextView prompt = text(
-                "What can I help you with?", 18, whiteColor, true
-        );
-        root.addView(prompt, matchWrap());
-
-        addSpace(root, 12);
-
-        commandInput = new EditText(this);
-        commandInput.setTextColor(whiteColor);
-        commandInput.setHintTextColor(Color.GRAY);
-        commandInput.setHint("Type a command...");
-        commandInput.setTextSize(16);
-        commandInput.setSingleLine(false);
-        commandInput.setMinLines(1);
-        commandInput.setMaxLines(3);
-        commandInput.setPadding(dp(16), dp(12), dp(16), dp(12));
-        commandInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
-
-        GradientDrawable inputBackground = new GradientDrawable();
-        inputBackground.setColor(Color.rgb(17, 27, 43));
-        inputBackground.setCornerRadius(dp(14));
-        inputBackground.setStroke(dp(1), Color.rgb(49, 70, 93));
-        commandInput.setBackground(inputBackground);
-
-        root.addView(commandInput, matchButton());
-
-        addSpace(root, 12);
-
-        Button runButton = makeButton(
-                "RUN COMMAND", Color.rgb(30, 49, 72), whiteColor
-        );
-        root.addView(runButton, matchButton());
-        runButton.setOnClickListener(v ->
-                handleCommand(commandInput.getText().toString())
-        );
+        LinearLayout metrics = new LinearLayout(this);
+        metrics.setOrientation(LinearLayout.HORIZONTAL);
+        metrics.addView(metricTile("VOICE", "READY"), weightParams(1, 0, dp(6)));
+        metrics.addView(metricTile("DEVICE", "CONNECTED"), weightParams(1, dp(3), dp(3)));
+        metrics.addView(metricTile("AI LINK", "PENDING"), weightParams(1, dp(6), 0));
+        root.addView(metrics, matchWrap());
 
         addSpace(root, 24);
 
-        TextView quickTitle = text(
-                "QUICK ACTIONS", 12, Color.LTGRAY, true
-        );
-        quickTitle.setGravity(Gravity.CENTER);
-        root.addView(quickTitle, matchWrap());
+        TextView commandLabel = text("COMMAND CONSOLE", 11, CYAN, true);
+        commandLabel.setLetterSpacing(0.18f);
+        root.addView(commandLabel, matchWrap());
 
-        addSpace(root, 12);
+        addSpace(root, 10);
+
+        commandInput = new EditText(this);
+        commandInput.setTextColor(WHITE);
+        commandInput.setHintTextColor(Color.rgb(91, 119, 139));
+        commandInput.setHint("Type a command for ULTRON...");
+        commandInput.setTextSize(15);
+        commandInput.setSingleLine(false);
+        commandInput.setMinLines(1);
+        commandInput.setMaxLines(3);
+        commandInput.setPadding(dp(16), dp(13), dp(16), dp(13));
+        commandInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        commandInput.setBackground(panelBackground(PANEL_LIGHT, CYAN_DIM, 15));
+        root.addView(commandInput, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(58)));
+
+        addSpace(root, 10);
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView voiceButton = hudButton("MIC  /  SPEAK", CYAN, BG, CYAN, true);
+        controls.addView(voiceButton, weightParams(1, 0, dp(5)));
+        voiceButton.setOnClickListener(v -> startVoiceInput());
+
+        TextView runButton = hudButton("RUN COMMAND", PANEL_LIGHT, WHITE, CYAN_DIM, true);
+        controls.addView(runButton, weightParams(1, dp(5), 0));
+        runButton.setOnClickListener(v ->
+                handleCommand(commandInput.getText().toString()));
+
+        root.addView(controls, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
+
+        addSpace(root, 25);
+
+        LinearLayout quickHeader = new LinearLayout(this);
+        quickHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView quickTitle = text("QUICK ACCESS", 11, CYAN, true);
+        quickTitle.setLetterSpacing(0.18f);
+        quickHeader.addView(quickTitle, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView quickHint = text("DEVICE SHORTCUTS", 9, MUTED, false);
+        quickHint.setLetterSpacing(0.10f);
+        quickHeader.addView(quickHint);
+        root.addView(quickHeader, matchWrap());
+
+        addSpace(root, 10);
 
         LinearLayout quickRow = new LinearLayout(this);
         quickRow.setOrientation(LinearLayout.HORIZONTAL);
 
-        Button youtubeButton = makeButton(
-                "YouTube", Color.rgb(35, 48, 67), whiteColor
-        );
-        Button whatsappButton = makeButton(
-                "WhatsApp", Color.rgb(35, 48, 67), whiteColor
-        );
-
-        LinearLayout.LayoutParams halfButton =
-                new LinearLayout.LayoutParams(0, dp(48), 1f);
-        halfButton.setMargins(0, 0, dp(6), 0);
-        quickRow.addView(youtubeButton, halfButton);
-
-        LinearLayout.LayoutParams otherHalf =
-                new LinearLayout.LayoutParams(0, dp(48), 1f);
-        otherHalf.setMargins(dp(6), 0, 0, 0);
-        quickRow.addView(whatsappButton, otherHalf);
-
-        root.addView(quickRow, matchWrap());
-
+        TextView youtubeButton = appButton("▶", "YOUTUBE");
+        quickRow.addView(youtubeButton, weightParams(1, 0, dp(5)));
         youtubeButton.setOnClickListener(v ->
-                openApp("com.google.android.youtube", "YouTube")
-        );
+                openApp("com.google.android.youtube", "YouTube"));
 
+        TextView whatsappButton = appButton("◉", "WHATSAPP");
+        quickRow.addView(whatsappButton, weightParams(1, dp(5), 0));
         whatsappButton.setOnClickListener(v ->
-                openApp("com.whatsapp", "WhatsApp")
-        );
+                openApp("com.whatsapp", "WhatsApp"));
 
-        addSpace(root, 26);
+        root.addView(quickRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(72)));
+
+        addSpace(root, 22);
+
+        LinearLayout responseCard = new LinearLayout(this);
+        responseCard.setOrientation(LinearLayout.VERTICAL);
+        responseCard.setPadding(dp(15), dp(13), dp(15), dp(15));
+        responseCard.setBackground(panelBackground(PANEL, Color.rgb(25, 62, 81), 14));
+
+        TextView responseTitle = text("SYSTEM MESSAGE", 10, GOLD, true);
+        responseTitle.setLetterSpacing(0.18f);
+        responseCard.addView(responseTitle, matchWrap());
+
+        addSpace(responseCard, 9);
 
         resultText = text(
-                "ULTRON interface initialized. AI connection is not configured yet.",
-                14, whiteColor, false
-        );
-        resultText.setGravity(Gravity.CENTER);
-        root.addView(resultText, matchWrap());
+                "ULTRON core initialized. AI connection will be enabled in the next stage.",
+                13, WHITE, false);
+        resultText.setGravity(Gravity.START);
+        responseCard.addView(resultText, matchWrap());
+
+        root.addView(responseCard, matchWrap());
+
+        addSpace(root, 18);
+
+        TextView footer = text("ULTRON  //  PERSONAL ASSISTANT", 9, MUTED, false);
+        footer.setLetterSpacing(0.17f);
+        footer.setGravity(Gravity.CENTER);
+        root.addView(footer, matchWrap());
 
         setContentView(scrollView);
     }
 
+    private View buildHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView emblem = text("U", 23, CYAN, true);
+        emblem.setGravity(Gravity.CENTER);
+        GradientDrawable emblemShape = new GradientDrawable();
+        emblemShape.setColor(PANEL_LIGHT);
+        emblemShape.setCornerRadius(dp(11));
+        emblemShape.setStroke(dp(1), CYAN_DIM);
+        emblem.setBackground(emblemShape);
+        header.addView(emblem, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        LinearLayout brandBlock = new LinearLayout(this);
+        brandBlock.setOrientation(LinearLayout.VERTICAL);
+        brandBlock.setPadding(dp(11), 0, 0, 0);
+
+        TextView brand = text("ULTRON", 21, WHITE, true);
+        brand.setLetterSpacing(0.16f);
+        brandBlock.addView(brand, matchWrap());
+
+        TextView subtitle = text("INTELLIGENCE INTERFACE", 9, MUTED, false);
+        subtitle.setLetterSpacing(0.10f);
+        brandBlock.addView(subtitle, matchWrap());
+
+        header.addView(brandBlock, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        LinearLayout status = new LinearLayout(this);
+        status.setGravity(Gravity.CENTER);
+        status.setPadding(dp(10), dp(7), dp(10), dp(7));
+        status.setBackground(panelBackground(PANEL, Color.rgb(32, 83, 87), 30));
+
+        View led = new View(this);
+        GradientDrawable ledShape = new GradientDrawable();
+        ledShape.setShape(GradientDrawable.OVAL);
+        ledShape.setColor(CYAN);
+        led.setBackground(ledShape);
+        status.addView(led, new LinearLayout.LayoutParams(dp(7), dp(7)));
+
+        TextView online = text("  ONLINE", 9, CYAN, true);
+        online.setLetterSpacing(0.08f);
+        status.addView(online, matchWrap());
+        header.addView(status);
+
+        return header;
+    }
+
+    private View metricTile(String label, String value) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.CENTER);
+        tile.setPadding(dp(5), dp(12), dp(5), dp(12));
+        tile.setBackground(panelBackground(PANEL, Color.rgb(25, 54, 72), 12));
+
+        TextView valueView = text(value, 10, WHITE, true);
+        valueView.setGravity(Gravity.CENTER);
+        valueView.setLetterSpacing(0.04f);
+        tile.addView(valueView, matchWrap());
+
+        addSpace(tile, 5);
+
+        TextView labelView = text(label, 9, MUTED, false);
+        labelView.setGravity(Gravity.CENTER);
+        labelView.setLetterSpacing(0.12f);
+        tile.addView(labelView, matchWrap());
+
+        return tile;
+    }
+
+    private TextView appButton(String symbol, String label) {
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.HORIZONTAL);
+        wrapper.setGravity(Gravity.CENTER);
+        wrapper.setPadding(dp(8), 0, dp(8), 0);
+        wrapper.setBackground(panelBackground(PANEL_LIGHT, Color.rgb(34, 76, 99), 12));
+
+        TextView icon = text(symbol, 21, GOLD, true);
+        wrapper.addView(icon, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView name = text("  " + label, 11, WHITE, true);
+        name.setLetterSpacing(0.06f);
+        wrapper.addView(name, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // A TextView is returned for a consistent clickable view; the wrapper is used as its background.
+        TextView button = text("", 1, WHITE, false);
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(wrapper.getBackground());
+        button.setText(label);
+        button.setTextColor(WHITE);
+        button.setTextSize(11);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setCompoundDrawablePadding(dp(8));
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(panelBackground(PANEL_LIGHT, Color.rgb(34, 76, 99), 12));
+        button.setText(label);
+        return button;
+    }
+
+    private TextView hudButton(String label, int background, int foreground,
+                               int stroke, boolean bold) {
+        TextView button = text(label, 11, foreground, bold);
+        button.setGravity(Gravity.CENTER);
+        button.setLetterSpacing(0.09f);
+        button.setBackground(panelBackground(background, stroke, 12));
+        button.setPadding(dp(8), 0, dp(8), 0);
+        return button;
+    }
+
     private void startVoiceInput() {
         Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        );
-        intent.putExtra(
-                RecognizerIntent.EXTRA_PROMPT,
-                "Speak a command for ULTRON"
-        );
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                "Speak a command for ULTRON");
 
         try {
+            connectionText.setText("VOICE INPUT  /  LISTENING");
             startActivityForResult(intent, SPEECH_REQUEST);
         } catch (Exception e) {
-            Toast.makeText(
-                    this,
+            connectionText.setText("VOICE INPUT UNAVAILABLE");
+            Toast.makeText(this,
                     "No speech recognition service is available.",
-                    Toast.LENGTH_LONG
-            ).show();
+                    Toast.LENGTH_LONG).show();
         }
     }
 
     @Override
-    protected void onActivityResult(
-            int requestCode, int resultCode, Intent data
-    ) {
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode == SPEECH_REQUEST && resultCode == RESULT_OK
-                && data != null) {
-
-            ArrayList<String> matches =
-                    data.getStringArrayListExtra(
-                            RecognizerIntent.EXTRA_RESULTS
-                    );
-
-            if (matches != null && !matches.isEmpty()) {
-                String spokenCommand = matches.get(0);
-                commandInput.setText(spokenCommand);
-                handleCommand(spokenCommand);
+        if (requestCode == SPEECH_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                ArrayList<String> matches = data.getStringArrayListExtra(
+                        RecognizerIntent.EXTRA_RESULTS);
+                if (matches != null && !matches.isEmpty()) {
+                    String spokenCommand = matches.get(0);
+                    commandInput.setText(spokenCommand);
+                    handleCommand(spokenCommand);
+                    return;
+                }
             }
+            connectionText.setText("SYSTEM STANDBY  /  AWAITING INPUT");
         }
     }
 
@@ -234,109 +365,176 @@ public class MainActivity extends Activity {
         String normalized = command.trim().toLowerCase(Locale.ROOT);
 
         if (normalized.isEmpty()) {
-            resultText.setText("Please enter or speak a command.");
+            resultText.setText("Enter a command or tap the voice control.");
             return;
         }
 
-        if (normalized.equals("youtube")
-                || normalized.contains("open youtube")) {
+        if (normalized.equals("youtube") || normalized.contains("open youtube")) {
             openApp("com.google.android.youtube", "YouTube");
             return;
         }
 
-        if (normalized.equals("whatsapp")
-                || normalized.contains("open whatsapp")) {
+        if (normalized.equals("whatsapp") || normalized.contains("open whatsapp")) {
             openApp("com.whatsapp", "WhatsApp");
             return;
         }
 
-        connectionText.setText("COMMAND RECEIVED");
-        resultText.setText(
-                "I received: \"" + command + "\"\n\n" +
-                "AI chat and more phone controls will be added in the next stages."
-        );
+        connectionText.setText("COMMAND RECEIVED  /  READY");
+        resultText.setText("Command received: \"" + command + "\"\n\n" +
+                "The AI connection and advanced phone controls are being added next.");
     }
 
     private void openApp(String packageName, String appName) {
-        Intent launchIntent =
-                getPackageManager().getLaunchIntentForPackage(packageName);
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
 
         if (launchIntent == null) {
-            resultText.setText(
-                    appName + " is not installed or cannot be opened."
-            );
+            resultText.setText(appName + " is not installed or cannot be opened.");
             return;
         }
 
         try {
             startActivity(launchIntent);
-            resultText.setText("Opening " + appName + "...");
-            connectionText.setText("COMMAND EXECUTED");
+            connectionText.setText("COMMAND EXECUTED  /  " + appName.toUpperCase(Locale.ROOT));
+            resultText.setText("Opening " + appName + " on this device.");
         } catch (Exception e) {
             resultText.setText("Could not open " + appName + ".");
         }
     }
 
-    private Button makeButton(
-            String label, int background, int foreground
-    ) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setTextSize(14);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setTextColor(foreground);
-        button.setAllCaps(false);
-
+    private GradientDrawable panelBackground(int color, int stroke, int radius) {
         GradientDrawable shape = new GradientDrawable();
-        shape.setColor(background);
-        shape.setCornerRadius(dp(14));
-        button.setBackground(shape);
-        button.setPadding(dp(12), dp(8), dp(12), dp(8));
-
-        return button;
+        shape.setColor(color);
+        shape.setCornerRadius(dp(radius));
+        shape.setStroke(dp(1), stroke);
+        return shape;
     }
 
-    private TextView text(
-            String value, float size, int color, boolean bold
-    ) {
+    private TextView text(String value, float size, int color, boolean bold) {
         TextView view = new TextView(this);
         view.setText(value);
         view.setTextSize(size);
         view.setTextColor(color);
-
+        view.setIncludeFontPadding(true);
         if (bold) {
             view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         }
-
         return view;
     }
 
     private LinearLayout.LayoutParams matchWrap() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
+                LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
-    private LinearLayout.LayoutParams matchButton() {
-        return new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(54)
-        );
+    private LinearLayout.LayoutParams weightParams(float weight, int left, int right) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, weight);
+        params.setMargins(left, 0, right, 0);
+        return params;
     }
 
     private void addSpace(LinearLayout layout, int height) {
-        TextView spacer = new TextView(this);
-        layout.addView(
-                spacer,
-                new LinearLayout.LayoutParams(
-                        1, dp(height)
-                )
-        );
+        View spacer = new View(this);
+        layout.addView(spacer, new LinearLayout.LayoutParams(1, dp(height)));
     }
 
     private int dp(float value) {
-        return (int) (value *
-                getResources().getDisplayMetrics().density + 0.5f);
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private final class CoreView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF ring = new RectF();
+
+        CoreView() {
+            super(MainActivity.this);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+
+            float size = Math.min(getWidth(), getHeight());
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            float radius = size * 0.43f;
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new RadialGradient(cx, cy, radius,
+                    new int[] { 0x5537D9EA, 0x2222A5C4, 0x00102030 },
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setShader(null);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.4f));
+            paint.setColor(Color.rgb(34, 111, 137));
+            canvas.drawCircle(cx, cy, radius, paint);
+
+            paint.setStrokeWidth(dp(2));
+            paint.setColor(CYAN);
+            ring.set(cx - radius * 0.92f, cy - radius * 0.92f,
+                    cx + radius * 0.92f, cy + radius * 0.92f);
+            canvas.drawArc(ring, -82, 104, false, paint);
+            canvas.drawArc(ring, 102, 78, false, paint);
+            canvas.drawArc(ring, 218, 96, false, paint);
+
+            paint.setStrokeWidth(dp(1));
+            paint.setColor(Color.rgb(35, 87, 111));
+            canvas.drawCircle(cx, cy, radius * 0.78f, paint);
+
+            ring.set(cx - radius * 0.68f, cy - radius * 0.68f,
+                    cx + radius * 0.68f, cy + radius * 0.68f);
+            paint.setColor(Color.rgb(45, 135, 156));
+            canvas.drawArc(ring, -35, 125, false, paint);
+            canvas.drawArc(ring, 155, 105, false, paint);
+
+            for (int i = 0; i < 72; i++) {
+                canvas.save();
+                canvas.rotate(i * 5f, cx, cy);
+                paint.setStrokeWidth(i % 6 == 0 ? dp(1.6f) : dp(0.8f));
+                paint.setColor(i % 6 == 0 ? CYAN : Color.rgb(48, 91, 112));
+                float start = radius * 0.82f;
+                float end = radius * (i % 6 == 0 ? 0.91f : 0.87f);
+                canvas.drawLine(cx, cy - start, cx, cy - end, paint);
+                canvas.restore();
+            }
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new RadialGradient(cx, cy, radius * 0.48f,
+                    new int[] { 0x663DE4F1, 0x2225AFCB, 0x00102030 },
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawCircle(cx, cy, radius * 0.48f, paint);
+            paint.setShader(null);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.3f));
+            paint.setColor(Color.rgb(70, 172, 190));
+            canvas.drawCircle(cx, cy, radius * 0.45f, paint);
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(GOLD);
+            Path bolt = new Path();
+            bolt.moveTo(cx + radius * 0.08f, cy - radius * 0.29f);
+            bolt.lineTo(cx - radius * 0.20f, cy + radius * 0.02f);
+            bolt.lineTo(cx - radius * 0.02f, cy + radius * 0.02f);
+            bolt.lineTo(cx - radius * 0.10f, cy + radius * 0.29f);
+            bolt.lineTo(cx + radius * 0.22f, cy - radius * 0.06f);
+            bolt.lineTo(cx + radius * 0.04f, cy - radius * 0.06f);
+            bolt.close();
+            canvas.drawPath(bolt, paint);
+
+            paint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(8));
+            paint.setColor(CYAN);
+            canvas.drawText("ULTRON CORE", cx, cy + radius * 0.59f, paint);
+
+            paint.setTextSize(dp(7));
+            paint.setColor(MUTED);
+            canvas.drawText("VOICE INTERFACE", cx, cy + radius * 0.69f, paint);
+        }
     }
 }
