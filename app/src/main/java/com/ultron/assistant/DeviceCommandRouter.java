@@ -123,7 +123,7 @@ public final class DeviceCommandRouter {
 
     private static String stripWakePhrase(String command) {
         return command.replaceFirst(
-                "(?i)^[\\\\s,.:;!?]*(?:(?:hey|okay|ok)\\\\s+)?ultron\\\\b[,!:.]?\\\\s*",
+                "(?i)^[\\s,.:;!?]*(?:(?:hey|okay|ok)\\s+)?ultron\\\\b[,!:.]?\\s*",
                 "").trim();
     }
 
@@ -149,7 +149,7 @@ public final class DeviceCommandRouter {
         }
 
         query = query == null ? "" : query.trim();
-        query = query.replaceAll("[\\\\s,.;:!?]+$", "").trim();
+        query = query.replaceAll("[\\s,.;:!?]+$", "").trim();
         if (query.isEmpty()) return null;
 
         return new SearchRequest(app, query);
