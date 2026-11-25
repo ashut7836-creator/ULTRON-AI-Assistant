@@ -61,8 +61,12 @@ public final class GeminiBrain {
             "^(?:please\\s+)?(?:open|launch|start)\\s+(?:the\\s+)?(youtube|instagram|whatsapp|google)(?:\\s+app)?[.!?]*$",
             Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern SEARCH_REQUEST = Pattern.compile(
-            "^(?:please\\s+)?(?:(?:search|find|look\\s+up)(?:\\s+for)?\\s+.+?\\s+(?:on|in)\\s+(youtube|instagram|google)(?:\\s+app)?|(?:search|find|look\\s+up)\\s+(youtube|instagram|google)\\s+(?:for\\s+)?\\S.*)[.!?]*$",
+    private static final Pattern SEARCH_ON_APP_REQUEST = Pattern.compile(
+            "^(?:please\\s+)?(?:search|find|look\\s+up)(?:\\s+for)?\\s+(.+?)\\s+(?:on|in)\\s+(youtube|instagram|google)(?:\\s+app)?[.!?]*$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern SEARCH_APP_FOR_REQUEST = Pattern.compile(
+            "^(?:please\\s+)?(?:search|find|look\\s+up)\\s+(youtube|instagram|google)\\s+(?:for\\s+)?(.+?)[.!?]*$",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern WHATSAPP_DRAFT_REQUEST = Pattern.compile(
@@ -353,12 +357,24 @@ public final class GeminiBrain {
         }
 
         if ("search_app".equals(toolName)) {
-            java.util.regex.Matcher matcher = SEARCH_REQUEST.matcher(message);
-            if (!matcher.matches()) return false;
-            String requestedApp = matcher.group(1) != null
-                    ? matcher.group(1) : matcher.group(2);
+            java.util.regex.Matcher matcher = SEARCH_ON_APP_REQUEST.matcher(message);
+            String requestedApp;
+            String requestedQuery;
+
+            if (matcher.matches()) {
+                requestedQuery = matcher.group(1);
+                requestedApp = matcher.group(2);
+            } else {
+                matcher = SEARCH_APP_FOR_REQUEST.matcher(message);
+                if (!matcher.matches()) return false;
+                requestedApp = matcher.group(1);
+                requestedQuery = matcher.group(2);
+            }
+
             return requestedApp != null
-                    && requestedApp.equalsIgnoreCase(arguments.get("app"));
+                    && requestedApp.equalsIgnoreCase(arguments.get("app"))
+                    && normalizeSearchText(requestedQuery)
+                    .equals(normalizeSearchText(arguments.get("query")));
         }
 
         if ("draft_whatsapp_message".equals(toolName)) {
@@ -366,6 +382,19 @@ public final class GeminiBrain {
         }
 
         return false;
+    }
+
+    private static String normalizeSearchText(String value) {
+        if (value == null) return "";
+        String normalized = value.trim().replaceAll("[.!?]+$", "").trim();
+        if (normalized.length() >= 2) {
+            char first = normalized.charAt(0);
+            char last = normalized.charAt(normalized.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                normalized = normalized.substring(1, normalized.length() - 1).trim();
+            }
+        }
+        return normalized.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private static String stripWakePhrase(String raw) {
