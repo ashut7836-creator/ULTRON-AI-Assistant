@@ -12,6 +12,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Looks up a requested contact entirely on-device.
@@ -43,6 +45,47 @@ public final class WhatsAppContactHelper {
         public String getKey() {
             return displayName + "|" + whatsappDigits;
         }
+    }
+
+    private static final Pattern[] CONTACT_MESSAGE_PATTERNS = {
+            Pattern.compile(
+                    "^(?:please\\s+)?(?:message|text)\\s+(?:to\\s+)?(.+?)\\s+(?:on|via|in)\\s+whatsapp\\s+(?:saying|that says|:|,)\\s*(.+)$",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+            Pattern.compile(
+                    "^(?:please\\s+)?(?:send|draft|write|compose|prepare)\\s+(?:a\\s+)?whatsapp\\s+message\\s+to\\s+(.+?)\\s+(?:saying|that says|:|,)\\s*(.+)$",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL)
+    };
+
+    public static final class DraftRequest {
+        public final String contactName;
+        public final String message;
+
+        DraftRequest(String contactName, String message) {
+            this.contactName = contactName;
+            this.message = message;
+        }
+    }
+
+    /** Recognizes a direct, explicit "message [person] on WhatsApp saying ..." request. */
+    public static DraftRequest parseDraftCommand(String rawCommand) {
+        if (rawCommand == null) return null;
+        String command = rawCommand.trim().replaceFirst(
+                "(?i)^[\\s,.:;!?]*(?:(?:hey|okay|ok)\\s+)?ultron\\b[,!:.]?\\s*",
+                "").trim();
+
+        for (Pattern pattern : CONTACT_MESSAGE_PATTERNS) {
+            Matcher matcher = pattern.matcher(command);
+            if (matcher.matches()) {
+                String name = matcher.group(1).trim();
+                String message = matcher.group(2).trim();
+                if (name.isEmpty() || name.length() > 80
+                        || message.isEmpty() || message.length() > 1000) {
+                    return null;
+                }
+                return new DraftRequest(name, message);
+            }
+        }
+        return null;
     }
 
     private WhatsAppContactHelper() {}
