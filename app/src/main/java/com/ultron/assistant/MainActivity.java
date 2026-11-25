@@ -634,7 +634,7 @@ public class MainActivity extends Activity {
                     if ((getApplicationInfo().flags
                             & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
                             && cause != null) {
-                        displayMessage += "\\n\\nDEBUG DIAGNOSTICS\\n"
+                        displayMessage += "\n\nDEBUG DIAGNOSTICS\n"
                                 + summarizeGeminiError(cause);
                     }
                     resultText.setText(displayMessage);
@@ -676,7 +676,7 @@ public class MainActivity extends Activity {
 
         while (current != null && depth < 5) {
             if (depth > 0) {
-                details.append("\\nCaused by: ");
+                details.append("\nCaused by: ");
             }
 
             details.append(current.getClass().getSimpleName());
