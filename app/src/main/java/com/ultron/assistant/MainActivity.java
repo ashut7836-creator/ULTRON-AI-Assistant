@@ -917,11 +917,6 @@ public class MainActivity extends Activity {
                     showLocalMessage("RESEARCH  /  NOT FOUND", "No research task matches that ID.");
                 } else if (matchCount > 1) {
                     showLocalMessage("RESEARCH  /  AMBIGUOUS ID", "That ID matches more than one task. Use more characters.");
-                } else if (selected.report == null || selected.report.trim().isEmpty()) {
-                    showLocalMessage(
-                            "RESEARCH  /  " + selected.status,
-                            "This task is " + selected.status.toLowerCase(Locale.ROOT)
-                                    + " (" + selected.progress + "%). Use 'show research tasks' for the latest status.");
                 } else {
                     loadResearchTask(selected.id);
                 }
@@ -937,8 +932,13 @@ public class MainActivity extends Activity {
                             java.util.UUID.fromString(id));
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
-                if (task == null || task.report == null) {
-                    showLocalMessage("RESEARCH  /  NOT FOUND", "The saved research report is unavailable.");
+                if (task == null) {
+                    showLocalMessage("RESEARCH  /  NOT FOUND", "The saved research task is unavailable.");
+                } else if (task.report == null || task.report.trim().isEmpty()) {
+                    showLocalMessage(
+                            "RESEARCH  /  " + task.status,
+                            "This task is " + task.status.toLowerCase(Locale.ROOT)
+                                    + " (" + task.progress + "%). Use 'show research tasks' to check again.");
                 } else {
                     showResearchReport(task);
                 }
