@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.net.Uri;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -109,6 +110,97 @@ public final class DeviceCommandRouter {
         }
 
         return null;
+    }
+
+    /**
+     * Result returned by the closed allowlist of model-requested device actions.
+     */
+    public static final class ToolActionResult {
+        public final boolean success;
+        public final String message;
+
+        ToolActionResult(boolean success, String message) {
+            this.success = success;
+            this.message = message;
+        }
+    }
+
+    /**
+     * Executes only three declared, allowlisted tools. Tool arguments are
+     * untrusted model output and are validated again before Android intents run.
+     * There is deliberately no function for sending a WhatsApp message.
+     */
+    public static ToolActionResult executeTool(
+            Activity activity, String toolName, Map<String, String> arguments) {
+        if (activity == null || toolName == null || arguments == null) {
+            return new ToolActionResult(false, "The requested action was invalid.");
+        }
+
+        if ("open_app".equals(toolName)) {
+            String app = arguments.get("app");
+            if (!isAllowedApp(app)) {
+                return new ToolActionResult(false, "That app is not on ULTRON's approved app list.");
+            }
+
+            String packageName = packageFor(app.toLowerCase(Locale.ROOT));
+            Intent launch = activity.getPackageManager().getLaunchIntentForPackage(packageName);
+            if (launch == null) {
+                return new ToolActionResult(false, displayName(app) + " does not appear to be installed.");
+            }
+            try {
+                activity.startActivity(launch);
+                return new ToolActionResult(true, "Opening " + displayName(app) + ".");
+            } catch (ActivityNotFoundException error) {
+                return new ToolActionResult(false, "Android couldn't open " + displayName(app) + ".");
+            }
+        }
+
+        if ("search_app".equals(toolName)) {
+            String app = arguments.get("app");
+            String query = arguments.get("query");
+            if (!isAllowedSearchApp(app) || query == null) {
+                return new ToolActionResult(false, "The search request was invalid.");
+            }
+            query = query.trim();
+            if (query.isEmpty() || query.length() > 200) {
+                return new ToolActionResult(false, "Please use a search query between 1 and 200 characters.");
+            }
+            String safeApp = app.toLowerCase(Locale.ROOT);
+            if (openSearch(activity, safeApp, query)) {
+                return new ToolActionResult(true, "Opening " + displayName(safeApp)
+                        + " search for " + query + ".");
+            }
+            return new ToolActionResult(false, "I couldn't open that search.");
+        }
+
+        if ("draft_whatsapp_message".equals(toolName)) {
+            String message = arguments.get("message");
+            if (message == null || message.trim().isEmpty() || message.length() > 1000) {
+                return new ToolActionResult(false, "The WhatsApp draft must contain 1 to 1000 characters.");
+            }
+            String url = "https://wa.me/?text=" + Uri.encode(message.trim());
+            if (openUrl(activity, url)) {
+                return new ToolActionResult(true,
+                        "WhatsApp is open with a draft. Choose the recipient, review it, and tap Send yourself.");
+            }
+            return new ToolActionResult(false, "I couldn't open WhatsApp.");
+        }
+
+        return new ToolActionResult(false, "That action is not available in ULTRON.");
+    }
+
+    private static boolean isAllowedApp(String app) {
+        if (app == null) return false;
+        String value = app.trim().toLowerCase(Locale.ROOT);
+        return "youtube".equals(value) || "instagram".equals(value)
+                || "whatsapp".equals(value) || "google".equals(value);
+    }
+
+    private static boolean isAllowedSearchApp(String app) {
+        if (app == null) return false;
+        String value = app.trim().toLowerCase(Locale.ROOT);
+        return "youtube".equals(value) || "instagram".equals(value)
+                || "google".equals(value);
     }
 
     private static final class SearchRequest {
