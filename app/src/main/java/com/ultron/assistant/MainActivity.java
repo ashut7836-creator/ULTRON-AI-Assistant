@@ -38,6 +38,10 @@ import com.google.firebase.FirebaseApp;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Date;
+import java.text.SimpleDateFormat;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
 
@@ -46,6 +50,14 @@ public class MainActivity extends Activity {
     private static final int REQUEST_WAKE_NOTIFICATIONS = 2202;
     private static final int REQUEST_WAKE_OVERLAY = 2203;
     private static final int REQUEST_CONTACTS = 2204;
+    private static final int REQUEST_REMINDER_NOTIFICATIONS = 2205;
+
+    private static final Pattern REMIND_ME_IN = Pattern.compile(
+            "^(?:please\\s+)?remind\\s+me\\s+in\\s+(\\d{1,4})\\s+(minute|minutes|min|hour|hours|hr|hrs)\\s+to\\s+(.+)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern CANCEL_REMINDER = Pattern.compile(
+            "^(?:please\\s+)?cancel\\s+(?:reminder|task)\\s+([a-f0-9-]{4,36})$",
+            Pattern.CASE_INSENSITIVE);
 
     public static final String ACTION_FROM_WAKE =
             "com.ultron.assistant.action.FROM_WAKE";
@@ -73,6 +85,8 @@ public class MainActivity extends Activity {
     private String pendingContactName;
     private String pendingWhatsAppMessage;
     private GeminiBrain.ToolCallback pendingContactToolCallback;
+    private String pendingReminderText;
+    private long pendingReminderDelayMillis;
     private TextView aiLinkStatus;
 
     @Override
@@ -417,6 +431,25 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (requestCode == REQUEST_REMINDER_NOTIFICATIONS) {
+            String reminder = pendingReminderText;
+            long delay = pendingReminderDelayMillis;
+            pendingReminderText = null;
+            pendingReminderDelayMillis = 0L;
+
+            boolean granted = Build.VERSION.SDK_INT < 33
+                    || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED;
+            if (granted && reminder != null) {
+                scheduleReminderNow(reminder, delay);
+            } else {
+                showLocalMessage(
+                        "REMINDERS  /  NOT ENABLED",
+                        "Notification permission was not granted, so ULTRON did not schedule the reminder.");
+            }
+            return;
+        }
+
         if (requestCode == REQUEST_WAKE_MIC
                 || requestCode == REQUEST_WAKE_NOTIFICATIONS) {
             boolean micGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
@@ -652,6 +685,10 @@ public class MainActivity extends Activity {
             }
         }
 
+        if (handleReminderCommand(command)) {
+            return;
+        }
+
         // Named WhatsApp recipients are resolved locally before the generic draft route.
         // Contact names and phone numbers are not sent to Gemini or stored in memory.
         WhatsAppContactHelper.DraftRequest contactDraft =
@@ -683,6 +720,188 @@ public class MainActivity extends Activity {
         }
 
         askGemini(command);
+    }
+
+    /**
+     * Supports user-controlled background reminders and task status commands.
+     * WorkManager performs the deferred work even after ULTRON's screen closes.
+     */
+    private boolean handleReminderCommand(String command) {
+        String clean = command == null ? "" : command.trim();
+        String normalized = clean.toLowerCase(Locale.ROOT);
+
+        if ("show reminders".equals(normalized)
+                || "list reminders".equals(normalized)
+                || "show tasks".equals(normalized)
+                || "show background tasks".equals(normalized)) {
+            showScheduledReminders();
+            return true;
+        }
+
+        Matcher cancelMatcher = CANCEL_REMINDER.matcher(clean);
+        if (cancelMatcher.matches()) {
+            cancelScheduledReminder(cancelMatcher.group(1).toLowerCase(Locale.ROOT));
+            return true;
+        }
+
+        Matcher matcher = REMIND_ME_IN.matcher(clean);
+        if (!matcher.matches()) return false;
+
+        long amount;
+        try {
+            amount = Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException error) {
+            showLocalMessage("REMINDERS  /  INVALID TIME", "That reminder time is not valid.");
+            return true;
+        }
+
+        String unit = matcher.group(2).toLowerCase(Locale.ROOT);
+        long multiplier = (unit.startsWith("hour") || unit.startsWith("hr"))
+                ? 60L * 60L * 1000L
+                : 60L * 1000L;
+
+        if (amount < 1 || amount * multiplier > 30L * 24L * 60L * 60L * 1000L) {
+            showLocalMessage(
+                    "REMINDERS  /  TIME LIMIT",
+                    "ULTRON reminders must be between 1 minute and 30 days.");
+            return true;
+        }
+
+        String reminderText = matcher.group(3).trim();
+        if (reminderText.isEmpty() || reminderText.length() > 240) {
+            showLocalMessage(
+                    "REMINDERS  /  TEXT LIMIT",
+                    "Please keep reminder text between 1 and 240 characters.");
+            return true;
+        }
+
+        long delayMillis = amount * multiplier;
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            pendingReminderText = reminderText;
+            pendingReminderDelayMillis = delayMillis;
+            requestPermissions(
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQUEST_REMINDER_NOTIFICATIONS);
+            return true;
+        }
+
+        scheduleReminderNow(reminderText, delayMillis);
+        return true;
+    }
+
+    private void scheduleReminderNow(String reminderText, long delayMillis) {
+        try {
+            java.util.UUID id = UltronTaskManager.scheduleReminder(
+                    getApplicationContext(), reminderText, delayMillis);
+            String message = "Reminder scheduled. ID: "
+                    + id.toString().substring(0, 8)
+                    + ". Android may deliver it a little after the requested time.";
+            showLocalMessage("REMINDERS  /  SCHEDULED", message);
+        } catch (RuntimeException error) {
+            showLocalMessage(
+                    "REMINDERS  /  FAILED",
+                    "ULTRON couldn't schedule that reminder. Please try again.");
+        }
+    }
+
+    private void showScheduledReminders() {
+        showLocalMessage("BACKGROUND TASKS  /  LOADING", "ULTRON is checking scheduled reminders.");
+        Thread query = new Thread(() -> {
+            String result;
+            try {
+                java.util.List<androidx.work.WorkInfo> reminders =
+                        UltronTaskManager.getReminders(getApplicationContext());
+                StringBuilder text = new StringBuilder();
+                int active = 0;
+
+                for (androidx.work.WorkInfo info : reminders) {
+                    androidx.work.WorkInfo.State state = info.getState();
+                    if (state == androidx.work.WorkInfo.State.SUCCEEDED
+                            || state == androidx.work.WorkInfo.State.FAILED
+                            || state == androidx.work.WorkInfo.State.CANCELLED) {
+                        continue;
+                    }
+
+                    String title = info.getInputData().getString(
+                            UltronTaskManager.KEY_REMINDER_TEXT);
+                    long dueAt = info.getInputData().getLong(
+                            UltronTaskManager.KEY_DUE_AT, 0L);
+                    String shortId = info.getId().toString().substring(0, 8);
+                    String when = dueAt > 0
+                            ? new SimpleDateFormat("EEE, dd MMM  h:mm a", Locale.getDefault())
+                                    .format(new Date(dueAt))
+                            : "time unavailable";
+
+                    if (active > 0) text.append("\n\n");
+                    text.append("ID ").append(shortId)
+                            .append("  /  ").append(state.name())
+                            .append("\n").append(title == null ? "Reminder" : title)
+                            .append("\n").append(when);
+                    active++;
+                }
+
+                result = active == 0
+                        ? "No active ULTRON reminders are scheduled."
+                        : "Active reminders:\n\n" + text
+                        + "\n\nCancel one with: cancel reminder followed by its ID.";
+            } catch (Exception error) {
+                result = "ULTRON couldn't read the scheduled task list.";
+            }
+
+            final String finalResult = result;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                showLocalMessage("BACKGROUND TASKS", finalResult);
+            });
+        }, "ultron-reminder-list");
+        query.start();
+    }
+
+    private void cancelScheduledReminder(String idPrefix) {
+        Thread query = new Thread(() -> {
+            String result;
+            try {
+                java.util.List<androidx.work.WorkInfo> reminders =
+                        UltronTaskManager.getReminders(getApplicationContext());
+                java.util.List<java.util.UUID> matches = new ArrayList<>();
+
+                for (androidx.work.WorkInfo info : reminders) {
+                    if (info.getId().toString().toLowerCase(Locale.ROOT)
+                            .startsWith(idPrefix)
+                            && info.getState() != androidx.work.WorkInfo.State.SUCCEEDED
+                            && info.getState() != androidx.work.WorkInfo.State.FAILED
+                            && info.getState() != androidx.work.WorkInfo.State.CANCELLED) {
+                        matches.add(info.getId());
+                    }
+                }
+
+                if (matches.size() == 1) {
+                    UltronTaskManager.cancelReminder(getApplicationContext(), matches.get(0));
+                    result = "Reminder " + idPrefix + " has been cancelled.";
+                } else if (matches.size() > 1) {
+                    result = "That ID matches more than one task. Use more characters from the reminder ID.";
+                } else {
+                    result = "No active reminder matches that ID.";
+                }
+            } catch (Exception error) {
+                result = "ULTRON couldn't cancel that reminder.";
+            }
+
+            final String finalResult = result;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                showLocalMessage("BACKGROUND TASKS", finalResult);
+            });
+        }, "ultron-reminder-cancel");
+        query.start();
+    }
+
+    private void showLocalMessage(String status, String message) {
+        if (connectionText != null) connectionText.setText(status);
+        if (resultText != null) resultText.setText(message);
+        speakResponse(message);
     }
 
     private void initializeGeminiBrain() {
