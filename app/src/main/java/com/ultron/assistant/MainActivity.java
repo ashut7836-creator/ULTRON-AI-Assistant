@@ -74,9 +74,9 @@ public class MainActivity extends Activity {
             "^(?:please\\s+)?cancel\\s+research\\s+([a-f0-9-]{4,36})$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern RESEARCH_SENSITIVE_TEXT = Pattern.compile(
-            "(?i)(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|(?<!\\d)\\d{10,16}(?!\\d)|\\b(?:password|passcode|api[ -]?key|access token|otp|private key)\\b)");
+            "(?i)(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|(?<!\\d)\\d{10,16}(?!\\d)|\\b(?:password|passcode|api[ -]?key|access token|otp|private key|home address|street address|phone number|contact details|date of birth|personal data|private information)\\b)");
     private static final Pattern RESEARCH_RESTRICTED_TOPIC = Pattern.compile(
-            "(?i)\\b(?:weapons?|firearms?|guns?|ammunition|knives|bombs?|explosives?|drug buying|drug sourcing|drug synthesis|cannabis|marijuana|vapes?|nicotine|gambling|sports betting|casinos?|pornography|self[- ]harm|suicide methods)\\b");
+            "(?i)\\b(?:weapons?|firearms?|guns?|ammunition|knives|bombs?|explosives?|poisons?|toxins?|toxic chemicals?|pesticides?|radioactive materials?|drug(?:s)?|intoxicants?|cannabis|marijuana|vapes?|nicotine|gambling|online gambling|sports betting|prediction markets?|casinos?|pornography|self[- ]harm|suicide methods|dangerous challenges?|dangerous stunts?|risky dares?)\\b");
 
     public static final String ACTION_FROM_WAKE =
             "com.ultron.assistant.action.FROM_WAKE";
