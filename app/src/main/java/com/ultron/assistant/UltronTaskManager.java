@@ -108,9 +108,13 @@ public final class UltronTaskManager {
                 .apply();
     }
 
-    public static void cancelReminder(Context context, UUID id) {
+    public static void cancelReminder(Context context, UUID id)
+            throws Exception {
         if (context == null || id == null) return;
-        WorkManager.getInstance(context.getApplicationContext()).cancelWorkById(id);
+        WorkManager.getInstance(context.getApplicationContext())
+                .cancelWorkById(id)
+                .getResult()
+                .get(20, TimeUnit.SECONDS);
         clearReminder(context, id);
     }
 
