@@ -570,6 +570,16 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // Run only explicitly supported, permission-conscious actions locally.
+        // Unknown requests continue to Gemini as ordinary conversation.
+        String actionResult = DeviceCommandRouter.handle(this, command);
+        if (actionResult != null) {
+            connectionText.setText("DEVICE ACTION  /  COMPLETE");
+            resultText.setText(actionResult);
+            speakResponse(actionResult);
+            return;
+        }
+
         if (normalized.equals("youtube") || normalized.contains("open youtube")) {
             openApp("com.google.android.youtube", "YouTube");
             return;
