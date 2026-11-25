@@ -580,12 +580,12 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (normalized.equals("youtube") || normalized.contains("open youtube")) {
+        if (normalized.equals("youtube")) {
             openApp("com.google.android.youtube", "YouTube");
             return;
         }
 
-        if (normalized.equals("whatsapp") || normalized.contains("open whatsapp")) {
+        if (normalized.equals("whatsapp")) {
             openApp("com.whatsapp", "WhatsApp");
             return;
         }
