@@ -17,8 +17,10 @@ import com.google.firebase.ai.type.GenerativeBackend;
 import com.google.firebase.ai.type.Part;
 import com.google.firebase.ai.type.Schema;
 import com.google.firebase.ai.type.Tool;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import kotlinx.serialization.json.JsonElement;
+import kotlinx.serialization.json.JsonElementKt;
+import kotlinx.serialization.json.JsonObject;
+import kotlinx.serialization.json.JsonPrimitive;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -258,16 +260,22 @@ public final class GeminiBrain {
             String message,
             Callback callback) {
         try {
-            JsonObject toolResult = new JsonObject();
-            toolResult.addProperty("success", success);
-            toolResult.addProperty(
+            Map<String, JsonElement> responseValues = new LinkedHashMap<>();
+            responseValues.put("success", JsonElementKt.JsonPrimitive(success));
+            responseValues.put(
                     "message",
-                    message == null ? "The action did not return a result." : message);
+                    JsonElementKt.JsonPrimitive(
+                            message == null ? "The action did not return a result." : message));
+            JsonObject toolResult = new JsonObject(responseValues);
 
             Content toolResponse = new Content(
                     "user",
                     Collections.<Part>singletonList(
-                            new FunctionResponsePart(functionCall.getName(), toolResult)));
+                            new FunctionResponsePart(
+                                    functionCall.getName(),
+                                    toolResult,
+                                    functionCall.id,
+                                    Collections.<Part>emptyList())));
 
             ListenableFuture<GenerateContentResponse> followUp =
                     chat.sendMessage(toolResponse);
@@ -318,11 +326,20 @@ public final class GeminiBrain {
         Map<String, String> safe = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> entry : raw.entrySet()) {
             JsonElement value = entry.getValue();
-            if (value == null || !value.isJsonPrimitive()
-                    || !value.getAsJsonPrimitive().isString()) {
+            if (!(value instanceof JsonPrimitive)) return null;
+
+            JsonPrimitive primitive = (JsonPrimitive) value;
+            String encoded = primitive.toString();
+            // Require a JSON string, not a number, boolean, object, or array.
+            if (encoded.length() < 2
+                    || encoded.charAt(0) != '"'
+                    || encoded.charAt(encoded.length() - 1) != '"') {
                 return null;
             }
-            safe.put(entry.getKey(), value.getAsString());
+
+            String decoded = JsonElementKt.getContentOrNull(primitive);
+            if (decoded == null) return null;
+            safe.put(entry.getKey(), decoded);
         }
         return Collections.unmodifiableMap(safe);
     }
