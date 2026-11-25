@@ -38,24 +38,8 @@ public final class UltronResearchManager {
         }
 
         Context appContext = context.getApplicationContext();
+        UUID id = UUID.randomUUID();
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(
-                UltronResearchWorker.class)
-                .setInputData(new androidx.work.Data.Builder()
-                        .putString(KEY_TASK_ID, "pending")
-                        .putString(KEY_TOPIC, cleanTopic)
-                        .build())
-                .setConstraints(new Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build())
-                .setBackoffCriteria(
-                        BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-                .addTag(TAG_RESEARCH)
-                .build();
-
-        UUID id = request.getId();
-        // Rebuild the request with its own ID so the worker can persist results
-        // using the exact WorkManager identifier shown to the user.
-        OneTimeWorkRequest keyedRequest = new OneTimeWorkRequest.Builder(
                 UltronResearchWorker.class)
                 .setId(id)
                 .setInputData(new androidx.work.Data.Builder()
