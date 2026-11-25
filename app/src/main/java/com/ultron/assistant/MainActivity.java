@@ -66,6 +66,7 @@ public class MainActivity extends Activity {
     private SpeechOutput speechOutput;
     private GeminiBrain geminiBrain;
     private UltronMemory ultronMemory;
+    private String pendingMemorySuggestion;
     private TextView aiLinkStatus;
 
     @Override
@@ -577,6 +578,7 @@ public class MainActivity extends Activity {
             try {
                 String memoryResult = ultronMemory.handleCommand(command);
                 if (memoryResult != null) {
+                    pendingMemorySuggestion = null;
                     connectionText.setText("MEMORY  /  UPDATED");
                     resultText.setText(memoryResult);
                     speakResponse(memoryResult);
@@ -587,6 +589,39 @@ public class MainActivity extends Activity {
                 resultText.setText("ULTRON couldn't access its saved memory on this device.");
                 speakResponse("ULTRON memory is temporarily unavailable.");
                 return;
+            }
+        }
+
+        // A pending suggestion is only accepted or declined by a clear user reply.
+        // Any unrelated next command dismisses it instead of leaving a stale prompt.
+        if (pendingMemorySuggestion != null) {
+            String choice = normalized.replaceAll("[,!?]+", " ")
+                    .replaceAll("\\s+", " ").trim();
+            if (isMemoryAcceptCommand(choice)) {
+                String approvedFact = pendingMemorySuggestion;
+                pendingMemorySuggestion = null;
+                UltronMemory.SaveResult saveResult = ultronMemory.remember(approvedFact);
+                String saveMessage;
+                if (saveResult == UltronMemory.SaveResult.SAVED) {
+                    saveMessage = "Saved with your approval in ULTRON's private memory on this device.";
+                } else if (saveResult == UltronMemory.SaveResult.DUPLICATE) {
+                    saveMessage = "That note is already saved in ULTRON's memory.";
+                } else {
+                    saveMessage = "ULTRON could not save that suggestion.";
+                }
+                connectionText.setText("MEMORY  /  UPDATED");
+                resultText.setText(saveMessage);
+                speakResponse(saveMessage);
+                return;
+            } else if (isMemoryDeclineCommand(choice)) {
+                pendingMemorySuggestion = null;
+                String declineMessage = "Okay. I won't save that suggestion.";
+                connectionText.setText("MEMORY  /  NOT SAVED");
+                resultText.setText(declineMessage);
+                speakResponse(declineMessage);
+                return;
+            } else {
+                pendingMemorySuggestion = null;
             }
         }
 
@@ -635,12 +670,15 @@ public class MainActivity extends Activity {
     }
 
     private void askGemini(String command) {
+        pendingMemorySuggestion = ultronMemory == null
+                ? null : ultronMemory.suggestFromMessage(command);
+
         if (geminiBrain == null) {
             connectionText.setText("GEMINI SETUP REQUIRED");
-            resultText.setText(
+            resultText.setText(appendMemorySuggestion(
                     "The Gemini connection is prepared in ULTRON, but its Firebase project " +
                     "is not connected yet. Complete the Firebase AI Logic setup and add " +
-                    "app/google-services.json to enable AI replies.");
+                    "app/google-services.json to enable AI replies."));
             speakResponse("Gemini setup is still required.");
             return;
         }
@@ -653,7 +691,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     connectionText.setText("GEMINI  /  RESPONSE READY");
-                    resultText.setText(answer);
+                    resultText.setText(appendMemorySuggestion(answer));
                     setAiLinkStatus("ONLINE");
                     speakResponse(answer);
                 });
@@ -673,12 +711,32 @@ public class MainActivity extends Activity {
                                 + "\n\nAPP CHECK DEBUG TOKEN (KEEP PRIVATE)\n"
                                 + readDebugAppCheckSecret();
                     }
-                    resultText.setText(displayMessage);
+                    resultText.setText(appendMemorySuggestion(displayMessage));
                     setAiLinkStatus("CHECK LINK");
                     speakResponse(message);
                 });
             }
         });
+    }
+
+    private String appendMemorySuggestion(String message) {
+        if (pendingMemorySuggestion == null) return message;
+        return message + "\n\nMEMORY SUGGESTION\nShould I save \"" 
+                + pendingMemorySuggestion
+                + "\" to ULTRON's private memory on this device? Reply YES or NO. "
+                + "Nothing is saved unless you approve.";
+    }
+
+    private boolean isMemoryAcceptCommand(String command) {
+        return "yes".equals(command) || "yes please".equals(command)
+                || "yes save it".equals(command) || "save it".equals(command)
+                || "save suggestion".equals(command) || "remember this".equals(command);
+    }
+
+    private boolean isMemoryDeclineCommand(String command) {
+        return "no".equals(command) || "no thanks".equals(command)
+                || "dont save".equals(command) || "do not save".equals(command)
+                || "discard".equals(command) || "dismiss".equals(command);
     }
 
     private void openApp(String packageName, String appName) {
