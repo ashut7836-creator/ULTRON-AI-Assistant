@@ -124,9 +124,9 @@ public final class UltronResearchWorker extends Worker {
             setProgressAsync(new Data.Builder().putInt("progress", 85).build());
 
             GroundingMetadata metadata = null;
-            Candidate[] candidates = response.getCandidates();
-            if (candidates != null && candidates.length > 0) {
-                metadata = candidates[0].getGroundingMetadata();
+            List<Candidate> candidates = response.getCandidates();
+            if (candidates != null && !candidates.isEmpty()) {
+                metadata = candidates.get(0).getGroundingMetadata();
             }
 
             String searchEntryHtml = null;
