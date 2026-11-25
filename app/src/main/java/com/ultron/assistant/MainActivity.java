@@ -824,20 +824,20 @@ public class MainActivity extends Activity {
                         continue;
                     }
 
-                    String title = info.getInputData().getString(
-                            UltronTaskManager.KEY_REMINDER_TEXT);
-                    long dueAt = info.getInputData().getLong(
-                            UltronTaskManager.KEY_DUE_AT, 0L);
+                    UltronTaskManager.ReminderDetails details =
+                            UltronTaskManager.getReminderDetails(
+                                    getApplicationContext(), info.getId());
+                    if (details == null) continue;
+
                     String shortId = info.getId().toString().substring(0, 8);
-                    String when = dueAt > 0
-                            ? new SimpleDateFormat("EEE, dd MMM  h:mm a", Locale.getDefault())
-                                    .format(new Date(dueAt))
-                            : "time unavailable";
+                    String when = new SimpleDateFormat(
+                            "EEE, dd MMM  h:mm a", Locale.getDefault())
+                            .format(new Date(details.dueAt));
 
                     if (active > 0) text.append("\n\n");
                     text.append("ID ").append(shortId)
                             .append("  /  ").append(state.name())
-                            .append("\n").append(title == null ? "Reminder" : title)
+                            .append("\n").append(details.text)
                             .append("\n").append(when);
                     active++;
                 }
