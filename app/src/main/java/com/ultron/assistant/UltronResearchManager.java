@@ -65,7 +65,7 @@ public final class UltronResearchManager {
             WorkManager.getInstance(appContext).enqueueUniqueWork(
                     "ultron-research-" + id,
                     ExistingWorkPolicy.KEEP,
-                    keyedRequest);
+                    request);
         } catch (RuntimeException error) {
             UltronResearchStore cleanup = new UltronResearchStore(appContext);
             try {
