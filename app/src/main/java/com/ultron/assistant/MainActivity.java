@@ -32,6 +32,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 
 import com.google.firebase.FirebaseApp;
 
@@ -58,6 +60,23 @@ public class MainActivity extends Activity {
     private static final Pattern CANCEL_REMINDER = Pattern.compile(
             "^(?:please\\s+)?cancel\\s+(?:reminder|task)\\s+([a-f0-9-]{4,36})$",
             Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern RESEARCH_BACKGROUND = Pattern.compile(
+            "^(?:please\\s+)?(?:research|investigate)\\s+(?:about\\s+)?(.+?)\\s+in\\s+(?:the\\s+)?background[.!?]*$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern RESEARCH_BACKGROUND_ALT = Pattern.compile(
+            "^(?:please\\s+)?start\\s+(?:a\\s+)?background\\s+research\\s+(?:about\\s+|on\\s+)?(.+)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern OPEN_RESEARCH = Pattern.compile(
+            "^(?:please\\s+)?open\\s+research\\s+([a-f0-9-]{4,36})$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern CANCEL_RESEARCH = Pattern.compile(
+            "^(?:please\\s+)?cancel\\s+research\\s+([a-f0-9-]{4,36})$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern RESEARCH_SENSITIVE_TEXT = Pattern.compile(
+            "(?i)(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|(?<!\\d)\\d{10,16}(?!\\d)|\\b(?:password|passcode|api[ -]?key|access token|otp|private key)\\b)");
+    private static final Pattern RESEARCH_RESTRICTED_TOPIC = Pattern.compile(
+            "(?i)\\b(?:weapons?|firearms?|guns?|ammunition|knives|bombs?|explosives?|drug buying|drug sourcing|drug synthesis|cannabis|marijuana|vapes?|nicotine|gambling|sports betting|casinos?|pornography|self[- ]harm|suicide methods)\\b");
 
     public static final String ACTION_FROM_WAKE =
             "com.ultron.assistant.action.FROM_WAKE";
@@ -685,6 +704,10 @@ public class MainActivity extends Activity {
             }
         }
 
+        if (handleResearchCommand(command)) {
+            return;
+        }
+
         if (handleReminderCommand(command)) {
             return;
         }
@@ -720,6 +743,345 @@ public class MainActivity extends Activity {
         }
 
         askGemini(command);
+    }
+
+    /**
+     * Starts and manages user-requested background research tasks.
+     * The topic is sent to Firebase AI Logic / Google Search only after the
+     * user confirms the preview dialog.
+     */
+    private boolean handleResearchCommand(String command) {
+        String clean = command == null ? "" : command.trim();
+        String normalized = clean.toLowerCase(Locale.ROOT);
+
+        if ("show research".equals(normalized)
+                || "show research tasks".equals(normalized)
+                || "list research".equals(normalized)
+                || "list research tasks".equals(normalized)
+                || "show background research".equals(normalized)) {
+            showResearchTasks();
+            return true;
+        }
+
+        Matcher openMatcher = OPEN_RESEARCH.matcher(clean);
+        if (openMatcher.matches()) {
+            openResearchTask(openMatcher.group(1).toLowerCase(Locale.ROOT));
+            return true;
+        }
+
+        Matcher cancelMatcher = CANCEL_RESEARCH.matcher(clean);
+        if (cancelMatcher.matches()) {
+            cancelResearchTask(cancelMatcher.group(1).toLowerCase(Locale.ROOT));
+            return true;
+        }
+
+        Matcher matcher = RESEARCH_BACKGROUND.matcher(clean);
+        String topic = null;
+        if (matcher.matches()) {
+            topic = matcher.group(1).trim();
+        } else {
+            matcher = RESEARCH_BACKGROUND_ALT.matcher(clean);
+            if (matcher.matches()) topic = matcher.group(1).trim();
+        }
+
+        if (topic == null) return false;
+        if (topic.length() < 4 || topic.length() > 300) {
+            showLocalMessage(
+                    "RESEARCH  /  TOPIC LIMIT",
+                    "Please keep a research topic between 4 and 300 characters.");
+            return true;
+        }
+
+        if (RESEARCH_SENSITIVE_TEXT.matcher(topic).find()) {
+            showLocalMessage(
+                    "RESEARCH  /  PRIVATE DATA",
+                    "ULTRON won't send passwords, keys, contact details, or other private identifiers to a research service.");
+            return true;
+        }
+
+        if (RESEARCH_RESTRICTED_TOPIC.matcher(topic).find()) {
+            showLocalMessage(
+                    "RESEARCH  /  NOT AVAILABLE",
+                    "ULTRON can't run background searches for restricted or harmful content.");
+            return true;
+        }
+
+        showResearchConfirmation(topic);
+        return true;
+    }
+
+    private void showResearchConfirmation(String topic) {
+        new AlertDialog.Builder(this)
+                .setTitle("Start background research?")
+                .setMessage(
+                        "Topic:\n" + topic
+                        + "\n\nULTRON will send this topic to Gemini through Firebase AI Logic "
+                        + "with Google Search enabled. It needs an internet connection and may "
+                        + "use mobile data and your project's AI quota. "
+                        + "The report and source links will be saved on this phone. "
+                        + "Android may defer the task while the app is in the background.")
+                .setNegativeButton("Cancel", (dialog, which) ->
+                        showLocalMessage("RESEARCH  /  CANCELLED", "No research task was started."))
+                .setPositiveButton("Start research", (dialog, which) ->
+                        enqueueResearchTask(topic))
+                .setCancelable(true)
+                .show();
+    }
+
+    private void enqueueResearchTask(String topic) {
+        try {
+            java.util.UUID id = UltronResearchManager.scheduleResearch(
+                    getApplicationContext(), topic);
+            showLocalMessage(
+                    "RESEARCH  /  QUEUED",
+                    "Background research has been queued. Task ID: "
+                            + id.toString().substring(0, 8)
+                            + ". Use 'show research tasks' to check progress.");
+        } catch (RuntimeException error) {
+            showLocalMessage(
+                    "RESEARCH  /  NOT STARTED",
+                    "ULTRON couldn't queue that research task. Please try again.");
+        }
+    }
+
+    private void showResearchTasks() {
+        showLocalMessage(
+                "RESEARCH  /  LOADING",
+                "ULTRON is checking your saved research tasks.");
+        Thread query = new Thread(() -> {
+            StringBuilder output = new StringBuilder();
+            try {
+                java.util.List<UltronResearchStore.Task> tasks =
+                        UltronResearchManager.listTasks(getApplicationContext());
+                int count = 0;
+
+                for (UltronResearchStore.Task task : tasks) {
+                    if (count > 0) output.append("\n\n");
+                    output.append("ID ").append(task.id.substring(0, 8))
+                            .append("  /  ").append(task.status)
+                            .append("  /  ").append(task.progress).append("%")
+                            .append("\n").append(task.topic);
+                    if (task.error != null && !task.error.trim().isEmpty()) {
+                        output.append("\n").append(task.error);
+                    }
+                    count++;
+                }
+
+                if (count == 0) {
+                    output.append("No research tasks have been created yet.");
+                } else {
+                    output.append("\n\nOpen a report with: open research followed by its ID.")
+                            .append("\nCancel an active task with: cancel research followed by its ID.");
+                }
+            } catch (Exception error) {
+                output.append("ULTRON couldn't read the research task list.");
+            }
+
+            final String result = output.toString();
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                new AlertDialog.Builder(this)
+                        .setTitle("ULTRON research tasks")
+                        .setMessage(result)
+                        .setPositiveButton("Close", null)
+                        .show();
+            });
+        }, "ultron-research-list");
+        query.start();
+    }
+
+    private void openResearchTask(String idPrefix) {
+        Thread query = new Thread(() -> {
+            UltronResearchStore.Task match = null;
+            int matches = 0;
+            try {
+                java.util.List<UltronResearchStore.Task> tasks =
+                        UltronResearchManager.listTasks(getApplicationContext());
+                for (UltronResearchStore.Task task : tasks) {
+                    if (task.id.toLowerCase(Locale.ROOT).startsWith(idPrefix)) {
+                        match = task;
+                        matches++;
+                    }
+                }
+            } catch (Exception ignored) {
+                matches = -1;
+            }
+
+            final UltronResearchStore.Task selected = match;
+            final int matchCount = matches;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (matchCount < 0) {
+                    showLocalMessage("RESEARCH  /  UNAVAILABLE", "ULTRON couldn't load research tasks.");
+                } else if (matchCount == 0) {
+                    showLocalMessage("RESEARCH  /  NOT FOUND", "No research task matches that ID.");
+                } else if (matchCount > 1) {
+                    showLocalMessage("RESEARCH  /  AMBIGUOUS ID", "That ID matches more than one task. Use more characters.");
+                } else if (selected.report == null || selected.report.trim().isEmpty()) {
+                    showLocalMessage(
+                            "RESEARCH  /  " + selected.status,
+                            "This task is " + selected.status.toLowerCase(Locale.ROOT)
+                                    + " (" + selected.progress + "%). Use 'show research tasks' for the latest status.");
+                } else {
+                    loadResearchTask(selected.id);
+                }
+            });
+        }, "ultron-research-open");
+        query.start();
+    }
+
+    private void loadResearchTask(String id) {
+        Thread query = new Thread(() -> {
+            UltronResearchStore.Task task =
+                    UltronResearchManager.getTask(getApplicationContext(),
+                            java.util.UUID.fromString(id));
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (task == null || task.report == null) {
+                    showLocalMessage("RESEARCH  /  NOT FOUND", "The saved research report is unavailable.");
+                } else {
+                    showResearchReport(task);
+                }
+            });
+        }, "ultron-research-load");
+        query.start();
+    }
+
+    private void cancelResearchTask(String idPrefix) {
+        Thread query = new Thread(() -> {
+            UltronResearchStore.Task match = null;
+            int matches = 0;
+            try {
+                java.util.List<UltronResearchStore.Task> tasks =
+                        UltronResearchManager.listTasks(getApplicationContext());
+                for (UltronResearchStore.Task task : tasks) {
+                    if (task.id.toLowerCase(Locale.ROOT).startsWith(idPrefix)) {
+                        match = task;
+                        matches++;
+                    }
+                }
+            } catch (Exception ignored) {
+                matches = -1;
+            }
+
+            String message;
+            if (matches < 0) {
+                message = "ULTRON couldn't read the research task list.";
+            } else if (matches == 0) {
+                message = "No research task matches that ID.";
+            } else if (matches > 1) {
+                message = "That ID matches more than one task. Use more characters.";
+            } else if ("SUCCEEDED".equals(match.status)
+                    || "UNVERIFIED".equals(match.status)
+                    || "FAILED".equals(match.status)
+                    || "CANCELLED".equals(match.status)) {
+                message = "That research task is already " + match.status.toLowerCase(Locale.ROOT) + ".";
+            } else {
+                try {
+                    UltronResearchManager.cancelTask(
+                            getApplicationContext(),
+                            java.util.UUID.fromString(match.id));
+                    message = "Research task " + idPrefix + " has been cancelled.";
+                } catch (Exception error) {
+                    message = "ULTRON couldn't confirm cancellation. Check the task status again.";
+                }
+            }
+
+            final String result = message;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                showLocalMessage("RESEARCH  /  TASK STATUS", result);
+            });
+        }, "ultron-research-cancel");
+        query.start();
+    }
+
+    private void showResearchReport(UltronResearchStore.Task task) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(14), dp(16), dp(18));
+        content.setBackgroundColor(PANEL);
+
+        TextView topicView = text("TOPIC\n" + task.topic, 12, GOLD, true);
+        topicView.setGravity(Gravity.START);
+        content.addView(topicView, matchWrap());
+
+        addSpace(content, 12);
+
+        TextView reportView = text(task.report, 13, WHITE, false);
+        reportView.setGravity(Gravity.START);
+        content.addView(reportView, matchWrap());
+
+        if (!task.sources.isEmpty()) {
+            addSpace(content, 18);
+            TextView sourceHeader = text("SOURCES", 11, CYAN, true);
+            sourceHeader.setLetterSpacing(0.14f);
+            content.addView(sourceHeader, matchWrap());
+
+            for (int i = 0; i < task.sources.size(); i++) {
+                final UltronResearchStore.Source source = task.sources.get(i);
+                TextView sourceView = text(
+                        "[" + (i + 1) + "] " + source.title,
+                        12, CYAN, true);
+                sourceView.setPadding(0, dp(8), 0, dp(8));
+                sourceView.setOnClickListener(v -> openResearchSource(source.uri));
+                content.addView(sourceView, matchWrap());
+            }
+        }
+
+        if (task.searchEntryHtml != null
+                && !task.searchEntryHtml.trim().isEmpty()) {
+            addSpace(content, 16);
+            TextView searchHeader = text("GOOGLE SEARCH SUGGESTIONS", 11, CYAN, true);
+            searchHeader.setLetterSpacing(0.10f);
+            content.addView(searchHeader, matchWrap());
+
+            WebView searchWidget = new WebView(this);
+            WebSettings settings = searchWidget.getSettings();
+            settings.setJavaScriptEnabled(false);
+            settings.setAllowFileAccess(false);
+            settings.setAllowContentAccess(false);
+            settings.setDomStorageEnabled(false);
+            if (Build.VERSION.SDK_INT >= 21) {
+                settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+            }
+            searchWidget.setBackgroundColor(PANEL);
+            searchWidget.loadDataWithBaseURL(
+                    "https://www.google.com/",
+                    task.searchEntryHtml,
+                    "text/html",
+                    "UTF-8",
+                    null);
+            content.addView(searchWidget, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(156)));
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(content);
+
+        new AlertDialog.Builder(this)
+                .setTitle("ULTRON research  /  " + task.status)
+                .setView(scroll)
+                .setPositiveButton("Close", null)
+                .show();
+    }
+
+    private void openResearchSource(String rawUri) {
+        if (rawUri == null) return;
+        Uri uri = Uri.parse(rawUri);
+        String scheme = uri.getScheme();
+        if (!("https".equalsIgnoreCase(scheme)
+                || "http".equalsIgnoreCase(scheme))
+                || uri.getHost() == null) {
+            return;
+        }
+
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, uri));
+        } catch (Exception ignored) {
+            Toast.makeText(this, "No app is available to open this source.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     /**
